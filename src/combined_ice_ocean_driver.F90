@@ -189,6 +189,8 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
 
   if (CS%intersperse_ice_ocn) then
     ! First step the ice, then ocean thermodynamics.
+    call direct_flux_ice_to_IOB(time_start_update, Ice, IOB, do_thermo=.true.)
+
     call update_ice_slow_thermo(Ice)
 
     call direct_flux_ice_to_IOB(time_start_update, Ice, IOB, do_thermo=.true.)
