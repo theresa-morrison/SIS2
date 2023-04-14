@@ -1576,7 +1576,7 @@ end subroutine add_diurnal_sw
 !> ice_model_init - initializes ice model data, parameters and diagnostics. It
 !! might operate on the fast ice processors, the slow ice processors or both.
 subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, &
-                          Verona_coupler, Concurrent_atm, Concurrent_ice_in, gas_fluxes, gas_fields_ocn )
+                          Verona_coupler, Concurrent_atm_in, Concurrent_ice_in, gas_fluxes, gas_fields_ocn )
 
   type(ice_data_type), intent(inout) :: Ice            !< The ice data type that is being initialized.
   type(time_type)    , intent(in)    :: Time_Init      !< The starting time of the model integration
@@ -1587,7 +1587,7 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
                                               !! in Ice to determine whether this is a fast or slow
                                               !! ice processor or both.  SIS2 will now throw a fatal
                                               !! error if this is present and true.
-  logical,   optional, intent(in)    :: Concurrent_atm !< If present and true, use sea ice model
+  logical,   optional, intent(in)    :: Concurrent_atm_in !< If present and true, use sea ice model
                                               !! settings appropriate for running the atmosphere and
                                               !! slow ice simultaneously, including embedding the
                                               !! slow sea-ice time stepping in the ocean model.
@@ -1722,7 +1722,7 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
   logical :: recategorize_ice ! If true, adjust the distribution of the ice among thickness
                               ! categories after initialization.
   logical :: Verona
-  logical :: Concurrent, Concurrent_ice
+  logical :: Concurrent_atm, Concurrent_ice
   logical :: read_aux_restart
   logical :: split_restart_files
   logical :: is_restart = .false.
@@ -1740,8 +1740,8 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
   Verona = .false. ; if (present(Verona_coupler)) Verona = Verona_coupler
   if (Verona) call SIS_error(FATAL, "SIS2 no longer works with pre-Warsaw couplers.")
   fast_ice_PE = Ice%fast_ice_pe ; slow_ice_PE = Ice%slow_ice_pe
-  Concurrent = .false. ; if (present(Concurrent_atm)) Concurrent = Concurrent_atm
-  Concurrent_ice = .false. ;  if (present(Concurrent_ice_in)) Concurrent_ice = Concurrent_ice_in
+  Concurrent_atm = .false. ; if (present(Concurrent_atm_in)) Concurrent_atm = Concurrent_atm_in
+  Concurrent_ice = .false. ; if (present(Concurrent_ice_in)) Concurrent_ice = Concurrent_ice_in
 
   ! Open the parameter file.
   if (fast_ice_PE.eqv.slow_ice_PE) then
@@ -1981,7 +1981,6 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
   elseif (uppercase(stagger(1:1)) == 'C') then ; Ice%flux_uv_stagger = CGRID_NE
   else ; call SIS_error(FATAL,"ice_model_init: ICE_OCEAN_STRESS_STAGGER = "//&
                         trim(stagger)//" is invalid.") ; endif
-  
   Ice%Time = Time
 
   !   Now that all top-level sea-ice parameters have been read, allocate the

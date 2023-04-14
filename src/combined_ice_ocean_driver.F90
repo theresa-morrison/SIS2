@@ -24,11 +24,10 @@ use MOM_time_manager,   only : operator(+), operator(-), operator(>)
 
 use ice_model_mod,      only : ice_data_type, ice_model_end
 use ice_model_mod,      only : update_ice_slow_thermo, update_ice_dynamics_trans
+use ice_model_mod,      only : unpack_ocn_ice_bdry
 use ocean_model_mod,    only : update_ocean_model, ocean_model_end
 use ocean_model_mod,    only : ocean_public_type, ocean_state_type, ice_ocean_boundary_type
 use ice_boundary_types, only : ocean_ice_boundary_type
-
-use ice_model_mod,      only : unpack_ocn_ice_bdry
 
 implicit none ; private
 
@@ -161,6 +160,7 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, OIB,&
   type(time_type),         intent(in)    :: time_start_update  !< The time at the beginning of the update step
   type(time_type),         intent(in)    :: coupling_time_step !< The amount of time over which to advance
                                                                !! the ocean and ice
+                                                               
   ! Local variables
   type(time_type) :: time_start_step ! The start time within an iterative update cycle.
   real :: dt_coupling        ! The time step of the thermodynamic update calls [s].
@@ -200,8 +200,7 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, OIB,&
         "ocean and slow ice layouts and domain sizes are identical.")
 
   if (CS%intersperse_ice_ocn) then
-    ! First step the ice, then ocean thermodynamics.
-    
+    ! First step the ice, then ocean thermodynamics.    
     call direct_flux_ocn_to_OIB(time_start_update, Ocean_sfc, OIB, Ice, do_thermo=.true.)
 
     call update_ice_slow_thermo(Ice)
@@ -216,12 +215,12 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, OIB,&
     nstep = 1
     if ((CS%dt_coupled_dyn > 0.0) .and. (CS%dt_coupled_dyn < dt_coupling))&
       nstep = max(CEILING(dt_coupling/CS%dt_coupled_dyn - 1e-6), 1)
-      dyn_time_step = real_to_time_type(dt_coupling / real(nstep))
-      time_start_step = time_start_update
+    dyn_time_step = real_to_time_type(dt_coupling / real(nstep))
+    time_start_step = time_start_update
     do ns=1,nstep
-    if (ns==nstep) then ! Adjust the dyn_time_step to cover uneven fractions of a tick or second.
-      dyn_time_step = coupling_time_step - (time_start_step - time_start_update)
-    endif
+      if (ns==nstep) then ! Adjust the dyn_time_step to cover uneven fractions of a tick or second.
+        dyn_time_step = coupling_time_step - (time_start_step - time_start_update)
+      endif
 
       call update_ice_dynamics_trans(Ice, time_step=dyn_time_step, &
                         start_cycle=(ns==1), end_cycle=(ns==nstep), cycle_length=dt_coupling)
