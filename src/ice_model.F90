@@ -846,7 +846,6 @@ subroutine unpack_ocn_ice_bdry(OIB, OSS, ITV, G, US, specified_ice, ocean_fields
   isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
   i_off = LBOUND(OIB%t,1) - G%isc ; j_off = LBOUND(OIB%t,2) - G%jsc
-!  iB_off = LBOUND(OIB%u_sym,1) - G%isc ; jB_off = LBOUND(OIB%v_sym,2) - G%jsc
 
   call cpu_clock_begin(iceClock) ; call cpu_clock_begin(ice_clock_slow)
 
@@ -869,102 +868,81 @@ subroutine unpack_ocn_ice_bdry(OIB, OSS, ITV, G, US, specified_ice, ocean_fields
 
   Cgrid_ocn = (allocated(OSS%u_ocn_C) .and. allocated(OSS%v_ocn_C))
 
-  if (.not. OIB%use_oib_sym) then
-    ! Unpack the ocean surface velocities.
-    if (OIB%stagger == AGRID) then
+  ! Unpack the ocean surface velocities.
+  if (OIB%stagger == AGRID) then
+    u_nonsym(:,:) = 0.0 ; v_nonsym(:,:) = 0.0
+    do j=jsc,jec ; do i=isc,iec ; i2 = i+i_off ; j2 = j+j_off
+      u_nonsym(i,j) = US%m_s_to_L_T*OIB%u(i2,j2) ; v_nonsym(i,j) = US%m_s_to_L_T*OIB%v(i2,j2)
+    enddo ; enddo
+    call pass_vector(u_nonsym, v_nonsym, G%Domain_aux, stagger=AGRID)
+
+    if (Cgrid_ocn) then
+      do j=jsc,jec ; do I=isc-1,iec
+        OSS%u_ocn_C(I,j) = 0.5*(u_nonsym(i,j) + u_nonsym(i+1,j))
+      enddo ; enddo
+      do J=jsc-1,jec ; do i=isc,iec
+        OSS%v_ocn_C(i,J) = 0.5*(v_nonsym(i,j) + v_nonsym(i,j+1))
+      enddo ; enddo
+    else
+      do J=jsc-1,jec ; do I=isc-1,iec
+        OSS%u_ocn_B(I,J) = 0.25*((u_nonsym(i,j) + u_nonsym(i+1,j+1)) + &
+                               (u_nonsym(i+1,j) + u_nonsym(i,j+1)))
+        OSS%v_ocn_B(I,J) = 0.25*((v_nonsym(i,j) + v_nonsym(i+1,j+1)) + &
+                               (v_nonsym(i+1,j) + v_nonsym(i,j+1)))
+      enddo ; enddo
+    endif
+
+  elseif (OIB%stagger == BGRID_NE) then
+    if (Cgrid_ocn) then
       u_nonsym(:,:) = 0.0 ; v_nonsym(:,:) = 0.0
       do j=jsc,jec ; do i=isc,iec ; i2 = i+i_off ; j2 = j+j_off
         u_nonsym(i,j) = US%m_s_to_L_T*OIB%u(i2,j2) ; v_nonsym(i,j) = US%m_s_to_L_T*OIB%v(i2,j2)
       enddo ; enddo
-      call pass_vector(u_nonsym, v_nonsym, G%Domain_aux, stagger=AGRID)
+      call pass_vector(u_nonsym, v_nonsym, G%Domain_aux, stagger=BGRID_NE)
 
-      if (Cgrid_ocn) then
-        do j=jsc,jec ; do I=isc-1,iec
-          OSS%u_ocn_C(I,j) = 0.5*(u_nonsym(i,j) + u_nonsym(i+1,j))
-        enddo ; enddo
-        do J=jsc-1,jec ; do i=isc,iec
-          OSS%v_ocn_C(i,J) = 0.5*(v_nonsym(i,j) + v_nonsym(i,j+1))
-        enddo ; enddo
-      else
-        do J=jsc-1,jec ; do I=isc-1,iec
-          OSS%u_ocn_B(I,J) = 0.25*((u_nonsym(i,j) + u_nonsym(i+1,j+1)) + &
-                                 (u_nonsym(i+1,j) + u_nonsym(i,j+1)))
-          OSS%v_ocn_B(I,J) = 0.25*((v_nonsym(i,j) + v_nonsym(i+1,j+1)) + &
-                                 (v_nonsym(i+1,j) + v_nonsym(i,j+1)))
-        enddo ; enddo
-      endif
-
-    elseif (OIB%stagger == BGRID_NE) then
-      if (Cgrid_ocn) then
-        u_nonsym(:,:) = 0.0 ; v_nonsym(:,:) = 0.0
-        do j=jsc,jec ; do i=isc,iec ; i2 = i+i_off ; j2 = j+j_off
-          u_nonsym(i,j) = US%m_s_to_L_T*OIB%u(i2,j2) ; v_nonsym(i,j) = US%m_s_to_L_T*OIB%v(i2,j2)
-        enddo ; enddo
-        call pass_vector(u_nonsym, v_nonsym, G%Domain_aux, stagger=BGRID_NE)
-
-        do j=jsc,jec ; do I=isc-1,iec
-          OSS%u_ocn_C(I,j) = 0.5*(u_nonsym(I,J) + u_nonsym(I,J-1))
-        enddo ; enddo
-        do J=jsc-1,jec ; do i=isc,iec
-          OSS%v_ocn_C(i,J) = 0.5*(v_nonsym(I,J) + v_nonsym(I-1,J))
-        enddo ; enddo
-      else
-        do J=jsc,jec ; do I=isc,iec ; i2 = i+i_off ; j2 = j+j_off
-          OSS%u_ocn_B(I,J) = US%m_s_to_L_T*OIB%u(i2,j2)
-          OSS%v_ocn_B(I,J) = US%m_s_to_L_T*OIB%v(i2,j2)
-        enddo ; enddo
-        if (G%symmetric) &
-          call fill_symmetric_edges(OSS%u_ocn_B, OSS%v_ocn_B, G%Domain, stagger=BGRID_NE)
-      endif
-
-    elseif (OIB%stagger == CGRID_NE) then
-      if (Cgrid_ocn) then
-        do j=jsc,jec ; do I=isc,iec ; i2 = i+i_off ; j2 = j+j_off
-          OSS%u_ocn_C(I,j) = US%m_s_to_L_T*OIB%u(i2,j2)
-        enddo ; enddo
-        do J=jsc,jec ; do i=isc,iec ; i2 = i+i_off ; j2 = j+j_off
-          OSS%v_ocn_C(i,J) = US%m_s_to_L_T*OIB%v(i2,j2)
-        enddo ; enddo
-        if (G%symmetric) &
-          call fill_symmetric_edges(OSS%u_ocn_C, OSS%v_ocn_C, G%Domain, stagger=CGRID_NE)
-      else
-        u_nonsym(:,:) = 0.0 ; v_nonsym(:,:) = 0.0
-        do j=jsc,jec ; do i=isc,iec ; i2 = i+i_off ; j2 = j+j_off
-          u_nonsym(I,j) = US%m_s_to_L_T*OIB%u(i2,j2) ; v_nonsym(i,J) = US%m_s_to_L_T*OIB%v(i2,j2)
-        enddo ; enddo
-        call pass_vector(u_nonsym, v_nonsym, G%Domain_aux, stagger=CGRID_NE)
-        do J=jsc-1,jec ; do I=isc-1,iec
-          OSS%u_ocn_B(I,J) = 0.5*(u_nonsym(I,j) + u_nonsym(I,j+1))
-          OSS%v_ocn_B(I,J) = 0.5*(v_nonsym(i,J) + v_nonsym(i+1,J))
-        enddo ; enddo
-      endif
+      do j=jsc,jec ; do I=isc-1,iec
+        OSS%u_ocn_C(I,j) = 0.5*(u_nonsym(I,J) + u_nonsym(I,J-1))
+      enddo ; enddo
+      do J=jsc-1,jec ; do i=isc,iec
+        OSS%v_ocn_C(i,J) = 0.5*(v_nonsym(I,J) + v_nonsym(I-1,J))
+      enddo ; enddo
     else
-      call SIS_error(FATAL, "unpack_ocn_ice_bdry: Unrecognized OIB%stagger.")
+      do J=jsc,jec ; do I=isc,iec ; i2 = i+i_off ; j2 = j+j_off
+        OSS%u_ocn_B(I,J) = US%m_s_to_L_T*OIB%u(i2,j2)
+        OSS%v_ocn_B(I,J) = US%m_s_to_L_T*OIB%v(i2,j2)
+      enddo ; enddo
+      if (G%symmetric) &
+        call fill_symmetric_edges(OSS%u_ocn_B, OSS%v_ocn_B, G%Domain, stagger=BGRID_NE)
     endif
-  else ! OIB%use_oib_sym == true so use symmetric u and v
-    if (OIB%stagger == CGRID_NE) then
-      if (Cgrid_ocn) then
-        do j=jsc,jec ; do I=isc-1,iec ; i2 = I+i_off ; j2 = j+j_off
-          OSS%u_ocn_C(I,j) = US%m_s_to_L_T*OIB%u_sym(i2,j2)
-        enddo ; enddo
-        do J=jsc-1,jec ; do i=isc,iec ; i2 = i+i_off ; j2 = J+j_off
-          OSS%v_ocn_C(i,J) = US%m_s_to_L_T*OIB%v_sym(i2,j2)
-        enddo ; enddo
-!        OSS%u_ocn_C = US%m_s_to_L_T*OIB%u_sym
-!        OSS%v_ocn_C = US%m_s_to_L_T*OIB%v_sym
-      else
-        call SIS_error(FATAL, "unpack_ocn_ice_bdry: must be using Cgrid_ocn if OIB%use_oib_sym == true.")
-      endif
+
+  elseif (OIB%stagger == CGRID_NE) then
+    if (Cgrid_ocn) then
+      do j=jsc,jec ; do I=isc,iec ; i2 = i+i_off ; j2 = j+j_off
+        OSS%u_ocn_C(I,j) = US%m_s_to_L_T*OIB%u(i2,j2)
+      enddo ; enddo
+      do J=jsc,jec ; do i=isc,iec ; i2 = i+i_off ; j2 = j+j_off
+        OSS%v_ocn_C(i,J) = US%m_s_to_L_T*OIB%v(i2,j2)
+      enddo ; enddo
+      if (G%symmetric) &
+        call fill_symmetric_edges(OSS%u_ocn_C, OSS%v_ocn_C, G%Domain, stagger=CGRID_NE)
     else
-      call SIS_error(FATAL, "unpack_ocn_ice_bdry: must use OIB%stagger == CGRID_NE when useing symmetric OIB%u and OIB%v.")
+      u_nonsym(:,:) = 0.0 ; v_nonsym(:,:) = 0.0
+      do j=jsc,jec ; do i=isc,iec ; i2 = i+i_off ; j2 = j+j_off
+        u_nonsym(I,j) = US%m_s_to_L_T*OIB%u(i2,j2) ; v_nonsym(i,J) = US%m_s_to_L_T*OIB%v(i2,j2)
+      enddo ; enddo
+      call pass_vector(u_nonsym, v_nonsym, G%Domain_aux, stagger=CGRID_NE)
+      do J=jsc-1,jec ; do I=isc-1,iec
+        OSS%u_ocn_B(I,J) = 0.5*(u_nonsym(I,j) + u_nonsym(I,j+1))
+        OSS%v_ocn_B(I,J) = 0.5*(v_nonsym(i,J) + v_nonsym(i+1,J))
+      enddo ; enddo
     endif
-  endif ! OIB%use_oib_sym 
+  else
+    call SIS_error(FATAL, "unpack_ocn_ice_bdry: Unrecognized OIB%stagger.")
+  endif
 
   ! Fill in the halo values.
   if (Cgrid_ocn) then
-    if (.not.OIB%use_oib_sym) then
-      call pass_vector(OSS%u_ocn_C, OSS%v_ocn_C, G%Domain, stagger=CGRID_NE)
-    endif
+    call pass_vector(OSS%u_ocn_C, OSS%v_ocn_C, G%Domain, stagger=CGRID_NE)
   else
     call pass_vector(OSS%u_ocn_B, OSS%v_ocn_B, G%Domain, stagger=BGRID_NE)
   endif
@@ -1615,7 +1593,7 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
                                               !! slow sea-ice time stepping in the ocean model.
   logical,   optional, intent(in)    :: Concurrent_ice_in !< If present and true, use sea ice model
                                               !! settings appropriate for embedding the
-                                              !! slow sea-ice time stepping in the ocean model.                                              
+                                              !! slow sea-ice time stepping in the ocean model.
   type(coupler_1d_bc_type), &
              optional, intent(in)     :: gas_fluxes !< If present, this type describes the
                                               !! additional gas or other tracer fluxes between the
@@ -1743,7 +1721,6 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
                               ! after a restart.Provide a switch to turn this option off.
   logical :: recategorize_ice ! If true, adjust the distribution of the ice among thickness
                               ! categories after initialization.
-  logical :: use_oib_sym
   logical :: Verona
   logical :: Concurrent, Concurrent_ice
   logical :: read_aux_restart
@@ -1822,13 +1799,7 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
                  "returned to the coupler.  Valid values include "//&
                  "'A', 'B', or 'C', with a default that follows the "//&
                  "value of CGRID_ICE_DYNAMICS.", default=dflt_stagger)
-  call get_param(param_file, mdl, "USE_OCEAN_ICE_bndry_sym", use_oib_sym, &
-                 "If true, the ocean surface velocity in the ocean-to-ice "//&
-                 "boundary will be symmetric. Otherwise, velocities at the "//&
-                 "south and east edges of the domain will incorrect. Default"//&
-                 "is false, but reccomended true when using SIS OBCs.", &
-                 default=.false.)
-                 
+
   ! Rho_ocean is not actually used here, but it used from later get_param
   ! calls in other modules.  This call is here to avoid changing the order of
   ! the entries in the SIS_parameter_doc files.
@@ -2010,8 +1981,7 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
   elseif (uppercase(stagger(1:1)) == 'C') then ; Ice%flux_uv_stagger = CGRID_NE
   else ; call SIS_error(FATAL,"ice_model_init: ICE_OCEAN_STRESS_STAGGER = "//&
                         trim(stagger)//" is invalid.") ; endif
-
-  Ice%use_oib_sym = use_oib_sym
+  
   Ice%Time = Time
 
   !   Now that all top-level sea-ice parameters have been read, allocate the
@@ -2629,7 +2599,7 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
   if (fast_ice_PE .eqv. slow_ice_PE) then
     call exchange_fast_to_slow_ice(Ice)
   endif 
-
+  
   if (Ice%shared_slow_fast_PEs) then
     iceClock = cpu_clock_id( 'Ice', grain=CLOCK_COMPONENT )
     ice_clock_fast = cpu_clock_id('Ice Fast', grain=CLOCK_SUBCOMPONENT )
