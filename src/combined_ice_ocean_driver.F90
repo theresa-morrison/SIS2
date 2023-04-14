@@ -43,7 +43,7 @@ type, public :: ice_ocean_driver_type ; private
   logical :: intersperse_ice_ocn !< If true, intersperse the ice and ocean thermodynamic and
                               !! dynamic updates.  This requires the update ocean (MOM6) interfaces
                               !! used with single_MOM_call=.false. The default is false.
-  logical :: use_intersperse_bug !< If true, use a but in the intersperse option where the ocean 
+  logical :: use_intersperse_bug !< If true, use a bug in the intersperse option where the ocean 
                               !! state was not being passed to the sea ice.
   real :: dt_coupled_dyn      !< The time step for coupling the ice and ocean dynamics when
                               !! INTERSPERSE_ICE_OCEAN is true, or <0 to use the coupled timestep.
@@ -126,7 +126,7 @@ subroutine ice_ocean_driver_init(CS, Time_init, Time_in)
                  "INTERSPERSE_ICE_OCEAN is true, or <0 to use the coupled timestep.", &
                  units="seconds", default=-1.0, do_not_log=.not.CS%intersperse_ice_ocn)
   call get_param(param_file, mdl, "USE_INTERSPERSE_BUG", CS%use_intersperse_bug, &
-                 "If true, use a but in the intersperse option where the ocean state"//&
+                 "If true, use a bug in the intersperse option where the ocean state"//&
                  "was not being passed to the sea ice.", default=.false.)
 
 !  OS%is_ocean_pe = Ocean_sfc%is_ocean_pe
