@@ -43,6 +43,8 @@ type, public :: ice_ocean_driver_type ; private
   logical :: intersperse_ice_ocn !< If true, intersperse the ice and ocean thermodynamic and
                               !! dynamic updates.  This requires the update ocean (MOM6) interfaces
                               !! used with single_MOM_call=.false. The default is false.
+  logical :: use_intersperse_bug !< If true, use a but in the intersperse option where the ocean 
+                              !! state was not being passed to the sea ice.
   real :: dt_coupled_dyn      !< The time step for coupling the ice and ocean dynamics when
                               !! INTERSPERSE_ICE_OCEAN is true, or <0 to use the coupled timestep.
                               !! The default is -1.
@@ -123,6 +125,9 @@ subroutine ice_ocean_driver_init(CS, Time_init, Time_in)
                  "The time step for coupling the ice and ocean dynamics when "//&
                  "INTERSPERSE_ICE_OCEAN is true, or <0 to use the coupled timestep.", &
                  units="seconds", default=-1.0, do_not_log=.not.CS%intersperse_ice_ocn)
+  call get_param(param_file, mdl, "USE_INTERSPERSE_BUG", CS%use_intersperse_bug, &
+                 "If true, use a but in the intersperse option where the ocean state"//&
+                 "was not being passed to the sea ice.", default=.false.)
 
 !  OS%is_ocean_pe = Ocean_sfc%is_ocean_pe
 !  if (.not.OS%is_ocean_pe) return
@@ -184,11 +189,13 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, OIB,&
                     "ocean_state_type structure. ocean_model_init must be "//  &
                     "called first to allocate this structure.")
   endif
-  if (.not.present(OIB)) then
-    call MOM_error(FATAL, "update_ocean_model called with an unassociated "// &
-                    "ocean_ice_boundary. This type is required to properly "//  &
-                    "couple the sea-ice and ocean. It should be added where "// &
-                    "this routine is called in coupler_main.")
+  if (CS%use_intersperse_bug) then
+    if (.not.present(OIB)) then
+      call MOM_error(FATAL, "update_ocean_model called with an unassociated "// &
+                      "ocean_ice_boundary. This type is required to properly "//  &
+                      "couple the sea-ice and ocean. It should be added where "// &
+                      "this routine is called in coupler_main.")
+    endif
   endif
 
   if (.not.(Ocean_sfc%is_ocean_pe .and. Ice%slow_ice_pe)) call MOM_error(FATAL, &
@@ -201,7 +208,8 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, OIB,&
 
   if (CS%intersperse_ice_ocn) then
     ! First step the ice, then ocean thermodynamics.    
-    call direct_flux_ocn_to_OIB(time_start_update, Ocean_sfc, OIB, Ice, do_thermo=.true.)
+    if (CS%use_intersperse_bug) &
+      call direct_flux_ocn_to_OIB(time_start_update, Ocean_sfc, OIB, Ice, do_thermo=.true.)
 
     call update_ice_slow_thermo(Ice)
     call direct_flux_ice_to_IOB(time_start_update, Ice,   IOB, do_thermo=.true.)
@@ -230,8 +238,8 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, OIB,&
       call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_step, dyn_time_step, &
                               update_dyn=.true., update_thermo=.false., &
                               start_cycle=.false., end_cycle=(ns==nstep), cycle_length=dt_coupling)
-
-      call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.false.)
+      if (CS%use_intersperse_bug) &
+        call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.false.)
            
       time_start_step = time_start_step + dyn_time_step
     enddo
