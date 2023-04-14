@@ -382,8 +382,6 @@ subroutine direct_flux_ocn_to_OIB(Time, Ocean, OIB, Ice, do_thermo)
                                               
   if( ASSOCIATED(OIB%u)     )OIB%u = Ocean%u_surf
   if( ASSOCIATED(OIB%v)     )OIB%v = Ocean%v_surf
-  if( ASSOCIATED(OIB%u_sym) )OIB%u_sym = Ocean%u_surf_sym
-  if( ASSOCIATED(OIB%v_sym) )OIB%v_sym = Ocean%v_surf_sym
   if( ASSOCIATED(OIB%sea_level) )OIB%sea_level = Ocean%sea_lev
   
   if (do_therm) then
@@ -404,10 +402,6 @@ subroutine direct_flux_ocn_to_OIB(Time, Ocean, OIB, Ice, do_thermo)
   
   call data_override('ICE', 'u',         OIB%u,         Time)
   call data_override('ICE', 'v',         OIB%v,         Time)
-  if (ASSOCIATED(OIB%u_sym)) &
-      call data_override('ICE', 'u_sym', OIB%u_sym, Time)
-  if (ASSOCIATED(OIB%v_sym)) &
-      call data_override('ICE', 'v_sym', OIB%v_sym, Time)
   call data_override('ICE', 'sea_level', OIB%sea_level, Time)
    
   !call coupler_type_data_override('ICE', OIB%fields, Time)
