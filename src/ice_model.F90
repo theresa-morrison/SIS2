@@ -260,7 +260,7 @@ end subroutine update_ice_slow_thermo
 
 !-----------------------------------------------------------------------
 !> Update the sea-ice state due to dynamics and ice transport.
-subroutine update_ice_dynamics_trans(Ice, time_step, start_cycle, end_cycle, cycle_length)
+subroutine update_ice_dynamics_trans(Ice, time_step, start_cycle, end_cycle, cycle_length, do_stage)
   type(ice_data_type),       intent(inout) :: Ice !< The publicly visible ice data type.
   type(time_type), optional, intent(in)    :: time_step !< The amount of time to cover in this update.
   logical,         optional, intent(in)    :: start_cycle !< This indicates whether this call is to be
@@ -270,6 +270,8 @@ subroutine update_ice_dynamics_trans(Ice, time_step, start_cycle, end_cycle, cyc
                                                   !! treated as the last call to update_ice_dynamics_trans
                                                   !! in a time-stepping cycle; missing is like true.
   real,            optional, intent(in)    :: cycle_length !< The duration of a coupled time stepping cycle [s].
+  integer,         optional, intent(in)    :: do_stage !! integer for which part of the ocean model update
+                                               !! to do. If 0 (zero) then do all the parts of the update.
 
   ! These pointers are used to simplify the code below.
   type(ice_grid_type),     pointer :: sIG => NULL()

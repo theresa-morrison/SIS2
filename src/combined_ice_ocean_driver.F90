@@ -216,7 +216,8 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, OIB,&
                            
     call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_update, coupling_time_step, &
                             update_dyn=.false., update_thermo=.true., &
-                            start_cycle=.true., end_cycle=.false., cycle_length=dt_coupling)
+                            start_cycle=.true., end_cycle=.false., cycle_length=dt_coupling, &
+                            do_stage=0)
 
     ! Now step the ice and ocean dynamics.  This part can have multiple shorter-cycle iterations
     ! and the fastest parts of these updates of the ice and ocean could eventually be fused.
@@ -231,13 +232,15 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, OIB,&
       endif
 
       call update_ice_dynamics_trans(Ice, time_step=dyn_time_step, &
-                        start_cycle=(ns==1), end_cycle=(ns==nstep), cycle_length=dt_coupling)
+                        start_cycle=(ns==1), end_cycle=(ns==nstep), cycle_length=dt_coupling, &
+                        do_stage=0)
 
       call direct_flux_ice_to_IOB(time_start_step, Ice, IOB, do_thermo=.false.)
 
       call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_step, dyn_time_step, &
                               update_dyn=.true., update_thermo=.false., &
-                              start_cycle=.false., end_cycle=(ns==nstep), cycle_length=dt_coupling)
+                              start_cycle=.false., end_cycle=(ns==nstep), cycle_length=dt_coupling, &
+                              do_stage=0)
       if (CS%use_intersperse_bug) &
         call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.false.)
            
