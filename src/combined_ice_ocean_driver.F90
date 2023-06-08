@@ -189,13 +189,11 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, OIB,&
                     "ocean_state_type structure. ocean_model_init must be "//  &
                     "called first to allocate this structure.")
   endif
-  if (CS%use_intersperse_bug) then
-    if (.not.present(OIB)) then
+  if ((.not.CS%use_intersperse_bug) .and. (.not.present(OIB))) then
       call MOM_error(FATAL, "update_ocean_model called with an unassociated "// &
                       "ocean_ice_boundary. This type is required to properly "//  &
                       "couple the sea-ice and ocean. It should be added where "// &
                       "this routine is called in coupler_main.")
-    endif
   endif
 
   if (.not.(Ocean_sfc%is_ocean_pe .and. Ice%slow_ice_pe)) call MOM_error(FATAL, &
@@ -207,11 +205,12 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, OIB,&
         "ocean and slow ice layouts and domain sizes are identical.")
 
   if (CS%intersperse_ice_ocn) then
-    ! First step the ice, then ocean thermodynamics.    
-    if (CS%use_intersperse_bug) &
+    if (.not.CS%use_intersperse_bug) &
       call direct_flux_ocn_to_OIB(time_start_update, Ocean_sfc, OIB, Ice, do_thermo=.true.)
 
+    ! First step the ice, then ocean thermodynamics.    
     call update_ice_slow_thermo(Ice)
+    
     call direct_flux_ice_to_IOB(time_start_update, Ice,   IOB, do_thermo=.true.)
                            
     call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_update, coupling_time_step, &
@@ -239,9 +238,9 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, OIB,&
 
       call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_step, dyn_time_step, &
                               update_dyn=.true., update_thermo=.false., &
-                              start_cycle=.false., end_cycle=(ns==nstep), cycle_length=dt_coupling, &
-                              do_stage=0)
-      if (CS%use_intersperse_bug) &
+                              start_cycle=.false., end_cycle=(ns==nstep), cycle_length=dt_coupling)
+                              
+      if (.not.CS%use_intersperse_bug) &
         call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.false.)
            
       time_start_step = time_start_step + dyn_time_step
@@ -383,14 +382,14 @@ subroutine direct_flux_ocn_to_OIB(Time, Ocean, OIB, Ice, do_thermo)
   do_therm = .true. ; if (present(do_thermo)) do_therm = do_thermo                                              
   do_area_weighted_flux = .false. !! Need to add option to account for area weighted fluxes                           
                                               
-  if( ASSOCIATED(OIB%u)     )OIB%u = Ocean%u_surf
-  if( ASSOCIATED(OIB%v)     )OIB%v = Ocean%v_surf
-  if( ASSOCIATED(OIB%sea_level) )OIB%sea_level = Ocean%sea_lev
+  if (ASSOCIATED(OIB%u)) OIB%u = Ocean%u_surf
+  if (ASSOCIATED(OIB%v)) OIB%v = Ocean%v_surf
+  if (ASSOCIATED(OIB%sea_level)) OIB%sea_level = Ocean%sea_lev
   
   if (do_therm) then
-   if( ASSOCIATED(OIB%t)     )OIB%t = Ocean%t_surf
-   if( ASSOCIATED(OIB%s)     )OIB%s = Ocean%s_surf
-   if( ASSOCIATED(OIB%frazil) ) then
+   if (ASSOCIATED(OIB%t)) OIB%t = Ocean%t_surf
+   if (ASSOCIATED(OIB%s)) OIB%s = Ocean%s_surf
+   if (ASSOCIATED(OIB%frazil)) then
 !   if(do_area_weighted_flux) then
 !     OIB%frazil = Ocean%frazil * Ocean%area
 !     call divide_by_area(OIB%frazil, Ice%area)
@@ -418,8 +417,7 @@ subroutine direct_flux_ocn_to_OIB(Time, Ocean, OIB, Ice, do_thermo)
   !Perform diagnostic output for the ocean_ice_boundary fields
   !call unpack_ocn_ice_bdry 
   call unpack_ocn_ice_bdry(OIB, Ice%sCS%OSS, Ice%sCS%IST%ITV, Ice%sCS%G, Ice%sCS%US, &
-                                Ice%sCS%specified_ice, Ice%ocean_fields)
-    
+                                Ice%sCS%specified_ice, Ice%ocean_fields)    
                                               
 end subroutine direct_flux_ocn_to_OIB                                        
                                             

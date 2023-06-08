@@ -2597,7 +2597,7 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
     Ice%xtype = REDIST
   endif
   
-  if (fast_ice_PE .eqv. slow_ice_PE) then
+  if (fast_ice_PE .and. slow_ice_PE) then
     call exchange_fast_to_slow_ice(Ice)
   endif 
   
