@@ -1576,7 +1576,8 @@ end subroutine add_diurnal_sw
 !> ice_model_init - initializes ice model data, parameters and diagnostics. It
 !! might operate on the fast ice processors, the slow ice processors or both.
 subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, &
-                          Verona_coupler, Concurrent_atm_in, Concurrent_ice_in, gas_fluxes, gas_fields_ocn )
+                          Verona_coupler, concurrent_ice, gas_fluxes, gas_fields_ocn, &
+                          split_fast_slow_in)
 
   type(ice_data_type), intent(inout) :: Ice            !< The ice data type that is being initialized.
   type(time_type)    , intent(in)    :: Time_Init      !< The starting time of the model integration
@@ -1587,12 +1588,9 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
                                               !! in Ice to determine whether this is a fast or slow
                                               !! ice processor or both.  SIS2 will now throw a fatal
                                               !! error if this is present and true.
-  logical,   optional, intent(in)    :: Concurrent_atm_in !< If present and true, use sea ice model
+  logical,   optional, intent(in)    :: Concurrent_ice !< If present and true, use sea ice model
                                               !! settings appropriate for running the atmosphere and
                                               !! slow ice simultaneously, including embedding the
-                                              !! slow sea-ice time stepping in the ocean model.
-  logical,   optional, intent(in)    :: Concurrent_ice_in !< If present and true, use sea ice model
-                                              !! settings appropriate for embedding the
                                               !! slow sea-ice time stepping in the ocean model.
   type(coupler_1d_bc_type), &
              optional, intent(in)     :: gas_fluxes !< If present, this type describes the
@@ -1605,6 +1603,8 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
                                               !! in the calculation of additional gas or other
                                               !! tracer fluxes, and can be used to spawn related
                                               !! internal variables in the ice model.
+  logical, optional, intent(in)   :: split_fast_slow_in !<
+                                              !! 
 
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
