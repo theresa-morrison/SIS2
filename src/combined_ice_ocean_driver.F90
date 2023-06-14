@@ -147,8 +147,8 @@ end subroutine ice_ocean_driver_init
 !>   The subroutine update_slow_ice_and_ocean uses the forcing already stored in
 !! the ice_data_type to advance both the sea-ice (and icebergs) and ocean states
 !! for a time interval coupling_time_step.
-subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, OIB,&
-                                     time_start_update, coupling_time_step)
+subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
+                                     time_start_update, coupling_time_step, OIB)
   type(ice_ocean_driver_type), &
                            pointer       :: CS   !< The control structure for this driver
   type(ice_data_type),     intent(inout) :: Ice  !< The publicly visible ice data type
@@ -165,7 +165,6 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, OIB,&
   type(time_type),         intent(in)    :: time_start_update  !< The time at the beginning of the update step
   type(time_type),         intent(in)    :: coupling_time_step !< The amount of time over which to advance
                                                                !! the ocean and ice
-                                                               
   ! Local variables
   type(time_type) :: time_start_step ! The start time within an iterative update cycle.
   real :: dt_coupling        ! The time step of the thermodynamic update calls [s].
