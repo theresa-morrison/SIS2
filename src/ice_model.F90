@@ -1576,8 +1576,7 @@ end subroutine add_diurnal_sw
 !> ice_model_init - initializes ice model data, parameters and diagnostics. It
 !! might operate on the fast ice processors, the slow ice processors or both.
 subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, &
-                          Verona_coupler, concurrent_ice, gas_fluxes, gas_fields_ocn, &
-                          split_fast_slow)
+                          Verona_coupler, concurrent_ice, gas_fluxes, gas_fields_ocn)
 
   type(ice_data_type), intent(inout) :: Ice            !< The ice data type that is being initialized.
   type(time_type)    , intent(in)    :: Time_Init      !< The starting time of the model integration
@@ -1588,8 +1587,7 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
                                               !! in Ice to determine whether this is a fast or slow
                                               !! ice processor or both.  SIS2 will now throw a fatal
                                               !! error if this is present and true.
-  logical,   optional, intent(in)    :: Concurrent_ice !< Old flag, use split_fast_slow instead.
-                                              !! If present and true, use sea ice model
+  logical,   optional, intent(in)    :: Concurrent_ice !< If present and true, use sea ice model
                                               !! settings appropriate for running the atmosphere and
                                               !! slow ice simultaneously, including embedding the
                                               !! slow sea-ice time stepping in the ocean model.
@@ -1604,9 +1602,6 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
                                               !! in the calculation of additional gas or other
                                               !! tracer fluxes, and can be used to spawn related
                                               !! internal variables in the ice model.
-  logical, optional, intent(in)   :: split_fast_slow !< Flag to indicate if sea ice has been 
-                                              !! split into slow and fast processes. This should be 
-                                              !! true when concurrent ice is used.
 
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
@@ -1743,17 +1738,7 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
   if (Verona) call SIS_error(FATAL, "SIS2 no longer works with pre-Warsaw couplers.")
   fast_ice_PE = Ice%fast_ice_pe ; slow_ice_PE = Ice%slow_ice_pe
   split_fast_slow_flag = .false. ; 
-  if (present(Concurrent_ice).and.present(split_fast_slow)) then 
-      call SIS_error(WARNING, "Both concurrent_ice and split_fast_slow were specified, " // &
-                              "defaulting to split_fast_slow.")
-      split_fast_slow_flag = split_fast_slow
-  elseif (present(Concurrent_ice)) then
-      call SIS_error(WARNING, "Use split_fast_slow instead of concurrent_ice , " // &
-                              "in ice_model_init.")
-      split_fast_slow_flag = Concurrent_ice    
-  elseif (present(split_fast_slow)) then
-      split_fast_slow_flag = split_fast_slow
-  endif  
+  if (present(Concurrent_ice)) split_fast_slow_flag = Concurrent_ice    
 
   ! Open the parameter file.
   if (fast_ice_PE.eqv.slow_ice_PE) then
