@@ -1008,7 +1008,7 @@ subroutine SIS_merged_dyn_cont(OSS, FIA, IOF, DS2d, IST, dt_cycle, Time_start, G
       endif
 
       if (nds>1) &
-        call pass_var(DS2d%mca_step(:,:,DS2d%n_ts), G%Domain, complete=.true.)
+        call pass_var(DS2d%mca_step(:,:,DS2d%nts), G%Domain, complete=.true.)
 
       call cpu_clock_begin(iceClocka)
       !### Ridging needs to be added with C-grid dynamics.
