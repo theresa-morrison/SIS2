@@ -127,7 +127,7 @@ subroutine ice_ocean_driver_init(CS, Time_init, Time_in)
                  units="seconds", default=-1.0, do_not_log=.not.CS%intersperse_ice_ocn)
   call get_param(param_file, mdl, "USE_INTERSPERSE_BUG", CS%use_intersperse_bug, &
                  "If true, use a bug in the intersperse option where the ocean state"//&
-                 "was not being passed to the sea ice.", default=.false.)
+                 "was not being passed to the sea ice.", default=.true.)
 
 !  OS%is_ocean_pe = Ocean_sfc%is_ocean_pe
 !  if (.not.OS%is_ocean_pe) return
@@ -159,12 +159,12 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
                                                  !! fields going from the ice to the ocean
                                                  !! The arrays of this type are intent out; they are
                                                  !! used externally for stocks and other diagnostics.
-  type(ocean_ice_boundary_type), optional, &
-                          intent(inout) :: OIB !< A structure containing information about
-                                                 !! the ocean that is being shared wth the sea-ice.
   type(time_type),         intent(in)    :: time_start_update  !< The time at the beginning of the update step
   type(time_type),         intent(in)    :: coupling_time_step !< The amount of time over which to advance
                                                                !! the ocean and ice
+  type(ocean_ice_boundary_type), optional, &
+                           intent(inout) :: OIB !< A structure containing information about
+                                                !! the ocean that is being shared wth the sea-ice.
   ! Local variables
   type(time_type) :: time_start_step ! The start time within an iterative update cycle.
   real :: dt_coupling        ! The time step of the thermodynamic update calls [s].
@@ -189,10 +189,10 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
                     "called first to allocate this structure.")
   endif
   if ((.not.CS%use_intersperse_bug) .and. (.not.present(OIB))) then
-      call MOM_error(FATAL, "update_ocean_model called with an unassociated "// &
-                      "ocean_ice_boundary. This type is required to properly "//  &
-                      "couple the sea-ice and ocean. It should be added where "// &
-                      "this routine is called in coupler_main.")
+    call MOM_error(FATAL, "update_ocean_model called with an unassociated "// &
+                    "ocean_ice_boundary. This type is required to properly "//  &
+                    "couple the sea-ice and ocean. It should be added where "// &
+                    "this routine is called in coupler_main.")
   endif
 
   if (.not.(Ocean_sfc%is_ocean_pe .and. Ice%slow_ice_pe)) call MOM_error(FATAL, &
