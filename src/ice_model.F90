@@ -1576,7 +1576,7 @@ end subroutine add_diurnal_sw
 !> ice_model_init - initializes ice model data, parameters and diagnostics. It
 !! might operate on the fast ice processors, the slow ice processors or both.
 subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, &
-                          Verona_coupler, Concurrent_ice, gas_fluxes, gas_fields_ocn)
+                          Verona_coupler, Concurrent_ice, gas_fluxes, gas_fields_ocn )
 
   type(ice_data_type), intent(inout) :: Ice            !< The ice data type that is being initialized.
   type(time_type)    , intent(in)    :: Time_Init      !< The starting time of the model integration
