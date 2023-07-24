@@ -204,8 +204,6 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
     call MOM_error(FATAL, "update_slow_ice_and_ocean can only be used if the "//&
         "ocean and slow ice layouts and domain sizes are identical.")
 
-  call ice_ocn_bnd_type_chksum( 'begin CIOD', 1000, IOB)
-
   if (CS%intersperse_ice_ocn) then
     if (.not.CS%use_intersperse_bug) &
       call direct_flux_ocn_to_OIB(time_start_update, Ocean_sfc, OIB, Ice, do_thermo=.true.)
@@ -213,12 +211,8 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
     ! First step the ice, then ocean thermodynamics.    
     call update_ice_slow_thermo(Ice)
     
-    call ice_ocn_bnd_type_chksum( 'begin CIOD', 50, IOB)
-
     call direct_flux_ice_to_IOB(time_start_update, Ice,   IOB, do_thermo=.true.)
                            
-    call ice_ocn_bnd_type_chksum( 'begin CIOD',  0, IOB)
-
     call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_update, coupling_time_step, &
                             update_dyn=.false., update_thermo=.true., &
                             start_cycle=.true., end_cycle=.false., cycle_length=dt_coupling)
@@ -240,8 +234,6 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
 
       call direct_flux_ice_to_IOB(time_start_step, Ice, IOB, do_thermo=.false.)
      
-      call ice_ocn_bnd_type_chksum( 'begin CIOD', ns, IOB)
-
       call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_step, dyn_time_step, &
                               update_dyn=.true., update_thermo=.false., &
                               start_cycle=.false., end_cycle=(ns==nstep), cycle_length=dt_coupling)
