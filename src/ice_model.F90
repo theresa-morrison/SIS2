@@ -1741,13 +1741,9 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
   if (present(Concurrent_ice)) split_fast_slow_flag = Concurrent_ice    
 
   ! Open the parameter file.
-  !if (fast_ice_PE.and.slow_ice_PE) then
-  ! call Get_SIS_Input(param_file, dirs, check_params=.true., component='SIS')  
-  ! call Get_SIS_Input(param_file, dirs, check_params=.false., component='SIS_fast')
-  !else
   if (slow_ice_PE) then
     call Get_SIS_Input(param_file, dirs, check_params=.true., component='SIS')
-  elseif (fast_ice_PE) then
+  else
     call Get_SIS_Input(param_file, dirs, check_params=.false., component='SIS_fast')
   endif
 
