@@ -1741,10 +1741,11 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
   if (present(Concurrent_ice)) split_fast_slow_flag = Concurrent_ice    
 
   ! Open the parameter file.
-  if (fast_ice_PE.eqv.slow_ice_PE) then
-    call Get_SIS_Input(param_file, dirs, check_params=.true., component='SIS')  
-    call Get_SIS_Input(param_file, dirs, check_params=.false., component='SIS_fast')
-  elseif (slow_ice_PE) then
+  !if (fast_ice_PE.and.slow_ice_PE) then
+  ! call Get_SIS_Input(param_file, dirs, check_params=.true., component='SIS')  
+  ! call Get_SIS_Input(param_file, dirs, check_params=.false., component='SIS_fast')
+  !else
+  if (slow_ice_PE) then
     call Get_SIS_Input(param_file, dirs, check_params=.true., component='SIS')
   elseif (fast_ice_PE) then
     call Get_SIS_Input(param_file, dirs, check_params=.false., component='SIS_fast')
@@ -2592,9 +2593,10 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
     Ice%xtype = REDIST
   endif
   
-  if (fast_ice_PE .and. slow_ice_PE) then
-    call exchange_fast_to_slow_ice(Ice)
-  endif 
+!  if (fast_ice_PE .and. slow_ice_PE) then
+!  if (split_fast_slow_flag) then
+!    call exchange_fast_to_slow_ice(Ice)
+!  endif 
   
   if (Ice%shared_slow_fast_PEs) then
     iceClock = cpu_clock_id( 'Ice', grain=CLOCK_COMPONENT )
