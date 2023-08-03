@@ -75,9 +75,10 @@ public :: slab_ice_dyn_trans
 public :: SIS_dyn_trans_register_restarts, SIS_dyn_trans_init, SIS_dyn_trans_end
 public :: SIS_dyn_trans_read_alt_restarts, stresses_to_stress_mag
 public :: SIS_dyn_trans_transport_CS, SIS_dyn_trans_sum_output_CS
+public :: dyn_trans_CS
 
 !> The control structure for the SIS_dyn_trans module
-type dyn_trans_CS ; private
+type dyn_trans_CS ; ! private
   logical :: Cgrid_dyn    !< If true use a C-grid discretization of the sea-ice dynamics.
   real    :: dt_ice_dyn   !< The time step used for the slow ice dynamics, including
                           !! stepping the continuity equation and interactions
@@ -317,7 +318,8 @@ end subroutine update_icebergs
 
 !~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~!
 !> SIS_dynamics_trans makes the calls to do ice dynamics and mass and tracer transport
-subroutine SIS_dynamics_trans(IST, OSS, FIA, IOF, dt_slow, CS, icebergs_CS, G, US, IG, tracer_CSp, OBC)
+subroutine SIS_dynamics_trans(IST, OSS, FIA, IOF, dt_slow, CS, icebergs_CS, G, US, IG, tracer_CSp, OBC, &
+                              first_call, second_call, IOBbt)
   type(ice_state_type),       intent(inout) :: IST !< A type describing the state of the sea ice
   type(ocean_sfc_state_type), intent(in)    :: OSS !< A structure containing the arrays that describe
                                                    !! the ocean's surface state for the ice model.
@@ -334,6 +336,10 @@ subroutine SIS_dynamics_trans(IST, OSS, FIA, IOF, dt_slow, CS, icebergs_CS, G, U
   type(SIS_tracer_flow_control_CS), pointer :: tracer_CSp !< The structure for controlling calls to
                                                    !! auxiliary ice tracer packages
   type(ice_OBC_type),         pointer       :: OBC  !< Open boundary structure.
+  logical,         optional, intent(in)    :: first_call
+  logical,         optional, intent(in)    :: second_call
+  type(ice_ocean_boundary_BT_type), &
+                                 optional, intent(inout) :: IOBbt !! type containing the variables needed to do the EVP TJM
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G))   :: &
@@ -404,7 +410,7 @@ subroutine SIS_dynamics_trans(IST, OSS, FIA, IOF, dt_slow, CS, icebergs_CS, G, U
 
       ! Update the category-merged dynamics and use the merged continuity equation.
       call SIS_merged_dyn_cont(OSS, FIA, IOF, CS%DS2d, IST, dt_adv_cycle, Time_cycle_start, &
-                               G, US, IG, CS, OBC)
+                               G, US, IG, CS, OBC) !, first_call=first, second_call=second, IOBbt)
 
       ! Complete the category-resolved mass and tracer transport and update the ice state type.
       call complete_IST_transport(CS%DS2d, CS%CAS, IST, dt_adv_cycle, G, US, IG, CS)
@@ -677,7 +683,7 @@ subroutine SIS_multi_dyn_trans(IST, OSS, FIA, IOF, dt_slow, CS, icebergs_CS, G, 
                                                    !! treated as the last call to SIS_multi_dyn_trans
                                                    !! in a time-stepping cycle; missing is like true.
   real,             optional, intent(in)    :: cycle_length !< The duration of a coupled time stepping cycle [s].
-
+                            
   ! Local variables
   real :: dt_adv_cycle ! The length of the advective cycle timestep [T ~> s].
   real :: dt_diags     ! The length of time over which the diagnostics are valid [T ~> s].
@@ -685,7 +691,6 @@ subroutine SIS_multi_dyn_trans(IST, OSS, FIA, IOF, dt_slow, CS, icebergs_CS, G, 
   integer :: nadv_cycle, nac ! The number of tracer advective cycles within this call.
   logical :: cycle_start, cycle_end, end_of_cycle
 
-  CS%n_calls = CS%n_calls + 1
   IOF%stress_count = 0
 
   cycle_start = .true. ; if (present(start_cycle)) cycle_start = start_cycle
@@ -899,6 +904,7 @@ end subroutine convert_IST_to_simple_state
 !~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~!
 !> Update the category-merged ice state and call the merged continuity update.
 subroutine SIS_merged_dyn_cont(OSS, FIA, IOF, DS2d, IST, dt_cycle, Time_start, G, US, IG, CS, OBC, end_call)
+!                               first_call, second_call, IOBbt)
   type(ocean_sfc_state_type), intent(in)    :: OSS !< A structure containing the arrays that describe
                                                    !! the ocean's surface state for the ice model.
   type(fast_ice_avg_type),    intent(in)    :: FIA !< A type containing averages of fields
@@ -917,7 +923,6 @@ subroutine SIS_merged_dyn_cont(OSS, FIA, IOF, DS2d, IST, dt_cycle, Time_start, G
   type(ice_OBC_type),         pointer       :: OBC !< Open boundary structure.
   logical,          optional, intent(in)    :: end_call !< If present and false, this call is
                                                    !! the last in the series of advective updates.
-
   ! This subroutine updates the 2-d sea-ice dynamics.
   !   Variables updated here: DS2d%ice_cover, DS2d%[uv]_ice_[BC], DS2d%mca_step, DS2d%mi_sum,
   !       CS%[uv]h_step, DS2d%nts, CS%SIS_[BC]_dyn_CSp,  IOF (stresses)
@@ -1014,6 +1019,7 @@ subroutine SIS_merged_dyn_cont(OSS, FIA, IOF, DS2d, IST, dt_cycle, Time_start, G
                           DS2d%u_ice_C, DS2d%v_ice_C, &
                           OSS%u_ocn_C, OSS%v_ocn_C, WindStr_x_Cu, WindStr_y_Cv, OSS%sea_lev, &
                           str_x_ice_ocn_Cu, str_y_ice_ocn_Cv, dt_slow_dyn, G, US, CS%SIS_C_dyn_CSp)
+                          ! first_call=first, second_call=second, IOBbt)
 
       call cpu_clock_end(iceClocka)
 
