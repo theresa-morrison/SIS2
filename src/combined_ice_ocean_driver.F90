@@ -14,6 +14,8 @@ use MOM_coupler_types,  only : coupler_type_send_data
 use MOM_cpu_clock,      only : cpu_clock_id, cpu_clock_begin, cpu_clock_end, CLOCK_COMPONENT
 use MOM_data_override,  only : data_override
 use MOM_domains,        only : domain2D, same_domain
+use MOM_domains,        only : pass_var, pass_vector, AGRID, BGRID_NE, CGRID_NE
+use MOM_domains,       only : fill_symmetric_edges
 use MOM_error_handler,  only : MOM_error, FATAL, WARNING, callTree_enter, callTree_leave
 use MOM_file_parser,    only : param_file_type, open_param_file, close_param_file
 use MOM_file_parser,    only : read_param, get_param, log_param, log_version
@@ -27,8 +29,15 @@ use ice_model_mod,      only : update_ice_slow_thermo, update_ice_dynamics_trans
 use ice_model_mod,      only : unpack_ocn_ice_bdry
 use ocean_model_mod,    only : update_ocean_model, ocean_model_end
 use ocean_model_mod,    only : ocean_public_type, ocean_state_type, ice_ocean_boundary_type
-use ocean_model_mod,    only: ocean_public_type_chksum, ice_ocn_bnd_type_chksum
+use ocean_model_mod,    only : ocean_public_type_chksum, ice_ocn_bnd_type_chksum
 use ice_boundary_types, only : ocean_ice_boundary_type
+use ice_boundary_types, only : ciod_ocean_ice_boundary_type
+use SIS_types,          only : ocean_sfc_state_type
+use SIS2_ice_thm,       only : T_freeze, ice_thermo_type
+use SIS_framework,      only : coupler_1d_bc_type, coupler_2d_bc_type, coupler_3d_bc_type
+use SIS_hor_grid,       only : SIS_hor_grid_type
+use MOM_unit_scaling,   only : unit_scale_type
+use SIS_framework,     only : coupler_type_spawn
 
 implicit none ; private
 
@@ -149,7 +158,7 @@ end subroutine ice_ocean_driver_init
 !! the ice_data_type to advance both the sea-ice (and icebergs) and ocean states
 !! for a time interval coupling_time_step.
 subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
-                                     time_start_update, coupling_time_step, OIB)
+                                     time_start_update, coupling_time_step)
   type(ice_ocean_driver_type), &
                            pointer       :: CS   !< The control structure for this driver
   type(ice_data_type),     intent(inout) :: Ice  !< The publicly visible ice data type
@@ -163,10 +172,9 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
   type(time_type),         intent(in)    :: time_start_update  !< The time at the beginning of the update step
   type(time_type),         intent(in)    :: coupling_time_step !< The amount of time over which to advance
                                                                !! the ocean and ice
-  type(ocean_ice_boundary_type), optional, &
-                           intent(inout) :: OIB !< A structure containing information about
-                                                !! the ocean that is being shared wth the sea-ice.
   ! Local variables
+  !type(ocean_ice_boundary_type)  :: OIB !< A structure containing information about
+  !                                             !! the ocean that is being shared wth the sea-ice.
   type(time_type) :: time_start_step ! The start time within an iterative update cycle.
   real :: dt_coupling        ! The time step of the thermodynamic update calls [s].
   type(time_type) :: dyn_time_step   ! The length of the dynamic call update calls.
@@ -189,12 +197,12 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
                     "ocean_state_type structure. ocean_model_init must be "//  &
                     "called first to allocate this structure.")
   endif
-  if ((.not.CS%use_intersperse_bug) .and. (.not.present(OIB))) then
-    call MOM_error(FATAL, "update_ocean_model called with an unassociated "// &
-                    "ocean_ice_boundary. This type is required to properly "//  &
-                    "couple the sea-ice and ocean. It should be added where "// &
-                    "this routine is called in coupler_main.")
-  endif
+  !if ((.not.CS%use_intersperse_bug) .and. (.not.present(OIB))) then
+  !  call MOM_error(FATAL, "update_ocean_model called with an unassociated "// &
+  !                  "ocean_ice_boundary. This type is required to properly "//  &
+  !                  "couple the sea-ice and ocean. It should be added where "// &
+  !                  "this routine is called in coupler_main.")
+  !endif
 
   if (.not.(Ocean_sfc%is_ocean_pe .and. Ice%slow_ice_pe)) call MOM_error(FATAL, &
         "update_slow_ice_and_ocean can only be called from PEs that handle both "//&
@@ -204,9 +212,11 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
     call MOM_error(FATAL, "update_slow_ice_and_ocean can only be used if the "//&
         "ocean and slow ice layouts and domain sizes are identical.")
 
+  !OIB=>Ice%OIBciod  
+
   if (CS%intersperse_ice_ocn) then
     if (.not.CS%use_intersperse_bug) &
-      call direct_flux_ocn_to_OIB(time_start_update, Ocean_sfc, OIB, Ice, do_thermo=.true.)
+      call direct_flux_ocn_to_OIB(time_start_update, Ocean_sfc, Ice%OIBciod, Ice, do_thermo=.true.)
 
     ! First step the ice, then ocean thermodynamics.
     call update_ice_slow_thermo(Ice)
@@ -238,7 +248,7 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
                               update_dyn=.true., update_thermo=.false., &
                               start_cycle=.false., end_cycle=(ns==nstep), cycle_length=dt_coupling)
       if (.not.CS%use_intersperse_bug) &
-        call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.false.)
+        call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, Ice%OIBciod, Ice, do_thermo=.false.)
 
       time_start_step = time_start_step + dyn_time_step
     enddo
@@ -365,7 +375,7 @@ end subroutine direct_flux_ice_to_IOB
 subroutine direct_flux_ocn_to_OIB(Time, Ocean, OIB, Ice, do_thermo)
   type(time_type),    intent(in)     :: Time  !< Current time
   type(ocean_public_type),intent(in) :: Ocean !< A derived data type to specify ocean boundary data
-  type(ocean_ice_boundary_type), intent(inout)   :: OIB !< A type containing ocean surface fields that
+  type(ciod_ocean_ice_boundary_type), intent(inout)   :: OIB !< A type containing ocean surface fields that
                                                       !! are used to drive the sea ice
   logical,  optional, intent(in)     :: do_thermo !< If present and false, do not update the
                                               !! thermodynamic or tracer fluxes.
@@ -379,21 +389,20 @@ subroutine direct_flux_ocn_to_OIB(Time, Ocean, OIB, Ice, do_thermo)
   do_therm = .true. ; if (present(do_thermo)) do_therm = do_thermo
   do_area_weighted_flux = .false. !! Need to add option to account for area weighted fluxes
 
-  if (ASSOCIATED(OIB%u)) OIB%u = Ocean%u_surf
-  if (ASSOCIATED(OIB%v)) OIB%v = Ocean%v_surf
-  if (ASSOCIATED(OIB%sea_level)) OIB%sea_level = Ocean%sea_lev
+  OIB%u = Ocean%u_surf
+  OIB%v = Ocean%v_surf
+  OIB%sea_level = Ocean%sea_lev
 
   if (do_therm) then
-   if (ASSOCIATED(OIB%t)) OIB%t = Ocean%t_surf
-   if (ASSOCIATED(OIB%s)) OIB%s = Ocean%s_surf
-   if (ASSOCIATED(OIB%frazil)) then
+    OIB%t = Ocean%t_surf
+    OIB%s = Ocean%s_surf
+!   if (ASSOCIATED(OIB%frazil)) then
 !   if(do_area_weighted_flux) then
 !     OIB%frazil = Ocean%frazil * Ocean%area
 !     call divide_by_area(OIB%frazil, Ice%area)
 !   else
      OIB%frazil = Ocean%frazil
 !   endif
-   endif
   endif
 
   ! Extra fluxes
@@ -413,7 +422,7 @@ subroutine direct_flux_ocn_to_OIB(Time, Ocean, OIB, Ice, do_thermo)
 
   !Perform diagnostic output for the ocean_ice_boundary fields
   !call unpack_ocn_ice_bdry
-  call unpack_ocn_ice_bdry(OIB, Ice%sCS%OSS, Ice%sCS%IST%ITV, Ice%sCS%G, Ice%sCS%US, &
+  call unpack_ciod_ocn_ice_bdry(OIB, Ice%sCS%OSS, Ice%sCS%IST%ITV, Ice%sCS%G, Ice%sCS%US, &
                                 Ice%sCS%specified_ice, Ice%ocean_fields)
 
 end subroutine direct_flux_ocn_to_OIB
@@ -437,5 +446,83 @@ subroutine ice_ocean_driver_end(CS, Ice, Ocean_sfc, Ocn, Time)
   if (associated(CS)) deallocate(CS)
 
 end subroutine ice_ocean_driver_end
+
+!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~!
+!> This subroutine converts the information in a publicly visible
+!! ocean_ice_boundary_type into an internally visible ocean_sfc_state_type
+!! variable.
+subroutine unpack_ciod_ocn_ice_bdry(OIB, OSS, ITV, G, US, specified_ice, ocean_fields)
+  type(ciod_ocean_ice_boundary_type), intent(in)    :: OIB !< A type containing ocean surface fields that
+                                                      !! are used to drive the sea ice
+  type(ocean_sfc_state_type),    intent(inout) :: OSS !< A structure containing the arrays that describe
+                                                      !! the ocean's surface state for the ice model.
+  type(ice_thermo_type),         intent(in)    :: ITV !< The ice thermodynamics parameter structure.
+  type(SIS_hor_grid_type),       intent(inout) :: G   !< The horizontal grid type
+  type(unit_scale_type),         intent(in)    :: US  !< A structure with unit conversion factors
+  logical,                       intent(in)    :: specified_ice !< If true, use specified ice properties.
+  type(coupler_3d_bc_type),      intent(inout) :: ocean_fields  !< A structure of ocean fields, often
+                                                                !! related to passive tracers.
+
+  real, dimension(G%isd:G%ied, G%jsd:G%jed) :: u_nonsym, v_nonsym ! Nonsymmetric velocities [L T-1 ~> m s-1]
+  real, parameter :: T_0degC = 273.15 ! 0 degrees C in Kelvin
+  logical :: Cgrid_ocn
+  integer :: i, j, k, m, n, i2, j2, k2, isc, iec, jsc, jec, i_off, j_off, index
+  integer :: isd, ied, jsd, jed
+
+  isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec
+  isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
+  i_off = LBOUND(OIB%t,1) - G%isc ; j_off = LBOUND(OIB%t,2) - G%jsc
+
+  ! Pass the ocean state through ice on partition 0, unless using specified ice.
+  if (.not. specified_ice) then
+    !$OMP parallel do default(shared) private(i2,j2)
+    do j=jsc,jec ; do i=isc,iec ; i2 = i+i_off ; j2 = j+j_off
+      OSS%SST_C(i,j) = US%degC_to_C * (OIB%t(i2,j2) - T_0degC)
+    enddo ; enddo
+  endif
+
+  !$OMP parallel do default(shared) private(i2,j2)
+  do j=jsc,jec ; do i=isc,iec ; i2 = i+i_off ; j2 = j+j_off
+    OSS%s_surf(i,j) = US%ppt_to_S*OIB%s(i2,j2)
+    OSS%T_fr_ocn(i,j) = T_Freeze(OSS%s_surf(i,j), ITV)
+    OSS%bheat(i,j) = OSS%kmelt*(OSS%SST_C(i,j) - OSS%T_fr_ocn(i,j))
+    OSS%frazil(i,j) = US%W_m2_to_QRZ_T*US%s_to_T*OIB%frazil(i2,j2)
+    OSS%sea_lev(i,j) = US%m_to_Z*OIB%sea_level(i2,j2)
+  enddo ; enddo
+
+  Cgrid_ocn = (allocated(OSS%u_ocn_C) .and. allocated(OSS%v_ocn_C))
+
+  ! Unpack the ocean surface velocities.
+    if (Cgrid_ocn) then
+      do j=jsc,jec ; do I=isc,iec ; i2 = i+i_off ; j2 = j+j_off
+        OSS%u_ocn_C(I,j) = US%m_s_to_L_T*OIB%u(i2,j2)
+      enddo ; enddo
+      do J=jsc,jec ; do i=isc,iec ; i2 = i+i_off ; j2 = j+j_off
+        OSS%v_ocn_C(i,J) = US%m_s_to_L_T*OIB%v(i2,j2)
+      enddo ; enddo
+      if (G%symmetric) &
+        call fill_symmetric_edges(OSS%u_ocn_C, OSS%v_ocn_C, G%Domain)
+    else
+      u_nonsym(:,:) = 0.0 ; v_nonsym(:,:) = 0.0
+      do j=jsc,jec ; do i=isc,iec ; i2 = i+i_off ; j2 = j+j_off
+        u_nonsym(I,j) = US%m_s_to_L_T*OIB%u(i2,j2) ; v_nonsym(i,J) = US%m_s_to_L_T*OIB%v(i2,j2)
+      enddo ; enddo
+      call pass_vector(u_nonsym, v_nonsym, G%Domain_aux, stagger=CGRID_NE)
+      do J=jsc-1,jec ; do I=isc-1,iec
+        OSS%u_ocn_B(I,J) = 0.5*(u_nonsym(I,j) + u_nonsym(I,j+1))
+        OSS%v_ocn_B(I,J) = 0.5*(v_nonsym(i,J) + v_nonsym(i+1,J))
+      enddo ; enddo
+    endif
+
+  ! Fill in the halo values.
+  call pass_vector(OSS%u_ocn_C, OSS%v_ocn_C, G%Domain)
+  call pass_var(OSS%sea_lev, G%Domain)
+
+! Transfer the ocean state for extra tracer fluxes.
+!  call coupler_type_spawn(OIB%fields, OSS%tr_fields, (/isd, isc, iec, ied/), &
+!                          (/jsd, jsc, jec, jed/))
+!  call coupler_type_copy_data(OIB%fields, OSS%tr_fields)
+
+end subroutine unpack_ciod_ocn_ice_bdry
 
 end module combined_ice_ocean_driver

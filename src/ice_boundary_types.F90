@@ -17,7 +17,7 @@ use iso_fortran_env,   only : int64
 
 implicit none ; private
 
-public :: ocean_ice_boundary_type, atmos_ice_boundary_type
+public :: ocean_ice_boundary_type, ciod_ocean_ice_boundary_type, atmos_ice_boundary_type
 public :: land_ice_boundary_type
 public :: ocn_ice_bnd_type_chksum, atm_ice_bnd_type_chksum
 public :: lnd_ice_bnd_type_chksum
@@ -43,6 +43,24 @@ type ocean_ice_boundary_type
                          !! REGRID, REDIST or DIRECT and is used by coupler
   type(coupler_2d_bc_type) :: fields !< An array of fields used for additional tracers
 end type ocean_ice_boundary_type
+
+type ciod_ocean_ice_boundary_type
+  real, dimension(:,:), pointer :: &
+    u      => NULL(), &  !< The x-direction ocean velocity at a position
+                         !! determined by stagger [m s-1].
+    v      => NULL(), &  !< The y-direction ocean velocity at a position
+                         !! determined by stagger [m s-1].
+    t      => NULL(), &  !< The ocean's surface temperature [Kelvin].
+    s      => NULL(), &  !< The ocean's surface salinity [gSalt kg-1].
+    frazil => NULL(), &  !< The frazil heat rejected by the ocean [J m-2].
+    sea_level => NULL()  !< The sea level after adjustment for any surface
+                         !! pressure that the ocean allows to be expressed [m].
+  real, dimension(:,:,:), pointer :: data =>NULL() !< S collective field for "named" fields above
+  integer   :: stagger = BGRID_NE  !< A flag indicating how the velocities are staggered.
+  integer   :: xtype     !< A flag indicating the exchange type, which may be set to
+                         !! REGRID, REDIST or DIRECT and is used by coupler
+  type(coupler_2d_bc_type) :: fields !< An array of fields used for additional tracers
+end type ciod_ocean_ice_boundary_type
 
 !> A type for exchange between the atmosphere and the sea ice
 type atmos_ice_boundary_type

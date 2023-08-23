@@ -2118,6 +2118,12 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
       Ice%area(i2,j2) = US%L_to_m**2 * sG%areaT(i,j) * sG%mask2dT(i,j)
     enddo ; enddo
 
+    if (split_fast_slow_flag) then 
+      ! Set up the ciodOIB
+      if (.not.associated(Ice%OIBciod)) allocate(Ice%OIBciod)
+      !sG => Ice%sCS%G
+    endif
+
   endif ! slow_ice_PE
 
   !   Allocate the various structures and register fields for restarts connected

@@ -2,6 +2,7 @@
 module ice_type_mod
 
 use ice_bergs,         only : icebergs, icebergs_stock_pe, icebergs_save_restart
+use ice_boundary_types,only : ciod_ocean_ice_boundary_type
 use ice_grid,          only : ice_grid_type
 use MOM_coms,          only : PE_here
 use MOM_domains,       only : CGRID_NE, BGRID_NE, AGRID
@@ -155,6 +156,8 @@ type ice_data_type !  ice_public_type
           !< A pointer to the fast ice restart control structure
   type(ice_OBC_type), pointer :: OBC => NULL()
           !< A pointer to the ice OBC control structure
+  type(ciod_ocean_ice_boundary_type), pointer :: OIBciod => NULL()
+          !< A pointer to a copy of the OIB type
   character(len=240) :: restart_output_dir = './RESTART/'
           !< The directory into which to write restart files.
 end type ice_data_type !  ice_public_type
