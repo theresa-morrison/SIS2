@@ -208,11 +208,6 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
         "ocean and slow ice layouts and domain sizes are identical.")
 
   if (CS%intersperse_ice_ocn) then
-!    if (.not.CS%use_intersperse_bug) &
-!      call direct_flux_ocn_to_OIB(time_start_update, Ocean_sfc, OIB, Ice, do_thermo=.true.)
-
-    call ocn_ice_bnd_type_chksum('OIB after first dfOcn2OIB and before update ocean', 0, OIB)
-
     ! First step the ice, then ocean thermodynamics.
     call update_ice_slow_thermo(Ice)
 
@@ -224,8 +219,6 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
 
     if (.not.CS%use_intersperse_bug) &
       call direct_flux_ocn_to_OIB(time_start_update, Ocean_sfc, OIB, Ice, do_thermo=.true.)
-
-    call ocn_ice_bnd_type_chksum('OIB after dfOcn2OIB and after update ocean', 0, OIB)
 
     ! Now step the ice and ocean dynamics.  This part can have multiple shorter-cycle iterations
     ! and the fastest parts of these updates of the ice and ocean could eventually be fused.
@@ -243,8 +236,6 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
                         start_cycle=(ns==1), end_cycle=(ns==nstep), cycle_length=dt_coupling)
 
       call direct_flux_ice_to_IOB(time_start_step, Ice, IOB, do_thermo=.false.)
-      
-      call ocn_ice_bnd_type_chksum('OIB before dyn update ocean. CIOD step:', ns, OIB)
 
       call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_step, dyn_time_step, &
                               update_dyn=.true., update_thermo=.false., &
@@ -252,7 +243,6 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
     
       if (.not.CS%use_intersperse_bug) &
         call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.false.)
-      call ocn_ice_bnd_type_chksum('OIB after dfOcn2OIB and after dyn update ocean. CIOD step:', ns, OIB)
 
       time_start_step = time_start_step + dyn_time_step
     enddo
