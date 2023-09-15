@@ -27,8 +27,11 @@ use ice_model_mod,      only : update_ice_slow_thermo, update_ice_dynamics_trans
 use ice_model_mod,      only : unpack_ocn_ice_bdry
 use ocean_model_mod,    only : update_ocean_model, ocean_model_end
 use ocean_model_mod,    only : ocean_public_type, ocean_state_type, ice_ocean_boundary_type
-use ocean_model_mod,    only: ocean_public_type_chksum, ice_ocn_bnd_type_chksum
+use ocean_model_mod,    only : ocean_public_type_chksum, ice_ocn_bnd_type_chksum
 use ice_boundary_types, only : ocean_ice_boundary_type
+use ice_model_mod,      only : ocn_ice_bnd_type_chksum
+use SIS_types,          only : translate_OSS_to_sOSS
+
 
 implicit none ; private
 
@@ -205,17 +208,24 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
         "ocean and slow ice layouts and domain sizes are identical.")
 
   if (CS%intersperse_ice_ocn) then
-    if (.not.CS%use_intersperse_bug) &
-      call direct_flux_ocn_to_OIB(time_start_update, Ocean_sfc, OIB, Ice, do_thermo=.true.)
+!    if (.not.CS%use_intersperse_bug) &
+!      call direct_flux_ocn_to_OIB(time_start_update, Ocean_sfc, OIB, Ice, do_thermo=.true.)
+
+    call ocn_ice_bnd_type_chksum('OIB after first dfOcn2OIB and before update ocean', 0, OIB)
 
     ! First step the ice, then ocean thermodynamics.
     call update_ice_slow_thermo(Ice)
 
-    call direct_flux_ice_to_IOB(time_start_update, Ice,   IOB, do_thermo=.true.)
+    call direct_flux_ice_to_IOB(time_start_update, Ice, IOB, do_thermo=.true.)
 
     call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_update, coupling_time_step, &
                             update_dyn=.false., update_thermo=.true., &
                             start_cycle=.true., end_cycle=.false., cycle_length=dt_coupling)
+
+    if (.not.CS%use_intersperse_bug) &
+      call direct_flux_ocn_to_OIB(time_start_update, Ocean_sfc, OIB, Ice, do_thermo=.true.)
+
+    call ocn_ice_bnd_type_chksum('OIB after dfOcn2OIB and after update ocean', 0, OIB)
 
     ! Now step the ice and ocean dynamics.  This part can have multiple shorter-cycle iterations
     ! and the fastest parts of these updates of the ice and ocean could eventually be fused.
@@ -233,12 +243,16 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
                         start_cycle=(ns==1), end_cycle=(ns==nstep), cycle_length=dt_coupling)
 
       call direct_flux_ice_to_IOB(time_start_step, Ice, IOB, do_thermo=.false.)
+      
+      call ocn_ice_bnd_type_chksum('OIB before dyn update ocean. CIOD step:', ns, OIB)
 
       call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_step, dyn_time_step, &
                               update_dyn=.true., update_thermo=.false., &
                               start_cycle=.false., end_cycle=(ns==nstep), cycle_length=dt_coupling)
+    
       if (.not.CS%use_intersperse_bug) &
         call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.false.)
+      call ocn_ice_bnd_type_chksum('OIB after dfOcn2OIB and after dyn update ocean. CIOD step:', ns, OIB)
 
       time_start_step = time_start_step + dyn_time_step
     enddo
@@ -379,19 +393,19 @@ subroutine direct_flux_ocn_to_OIB(Time, Ocean, OIB, Ice, do_thermo)
   do_therm = .true. ; if (present(do_thermo)) do_therm = do_thermo
   do_area_weighted_flux = .false. !! Need to add option to account for area weighted fluxes
 
-  if (ASSOCIATED(OIB%u)) OIB%u = Ocean%u_surf
-  if (ASSOCIATED(OIB%v)) OIB%v = Ocean%v_surf
-  if (ASSOCIATED(OIB%sea_level)) OIB%sea_level = Ocean%sea_lev
+  if (ASSOCIATED(OIB%u)) OIB%u(:,:) = Ocean%u_surf(:,:)
+  if (ASSOCIATED(OIB%v)) OIB%v(:,:) = Ocean%v_surf(:,:)
+  if (ASSOCIATED(OIB%sea_level)) OIB%sea_level(:,:) = Ocean%sea_lev(:,:)
 
   if (do_therm) then
-   if (ASSOCIATED(OIB%t)) OIB%t = Ocean%t_surf
-   if (ASSOCIATED(OIB%s)) OIB%s = Ocean%s_surf
+   if (ASSOCIATED(OIB%t)) OIB%t(:,:) = Ocean%t_surf(:,:)
+   if (ASSOCIATED(OIB%s)) OIB%s(:,:) = Ocean%s_surf(:,:)
    if (ASSOCIATED(OIB%frazil)) then
 !   if(do_area_weighted_flux) then
 !     OIB%frazil = Ocean%frazil * Ocean%area
 !     call divide_by_area(OIB%frazil, Ice%area)
 !   else
-     OIB%frazil = Ocean%frazil
+     OIB%frazil(:,:) = Ocean%frazil(:,:)
 !   endif
    endif
   endif
@@ -415,6 +429,8 @@ subroutine direct_flux_ocn_to_OIB(Time, Ocean, OIB, Ice, do_thermo)
   !call unpack_ocn_ice_bdry
   call unpack_ocn_ice_bdry(OIB, Ice%sCS%OSS, Ice%sCS%IST%ITV, Ice%sCS%G, Ice%sCS%US, &
                                 Ice%sCS%specified_ice, Ice%ocean_fields)
+  
+  call translate_OSS_to_sOSS(Ice%sCS%OSS, Ice%sCS%IST, Ice%sCS%sOSS, Ice%sCS%G, Ice%sCS%US)
 
 end subroutine direct_flux_ocn_to_OIB
 

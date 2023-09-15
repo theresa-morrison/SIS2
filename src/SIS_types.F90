@@ -2503,7 +2503,9 @@ subroutine TSF_chksum(mesg, TSF, G, US, haloshift)
   call hchksum(TSF%evap, trim(mesg)//" TSF%evap", G%HI, haloshift=hs, scale=US%RZ_T_to_kg_m2s)
   call hchksum(TSF%lprec, trim(mesg)//" TSF%lprec", G%HI, haloshift=hs, scale=US%RZ_T_to_kg_m2s)
   call hchksum(TSF%fprec, trim(mesg)//" TSF%fprec", G%HI, haloshift=hs, scale=US%RZ_T_to_kg_m2s)
-  call uvchksum(mesg//" TSF%flux_[uv]", TSF%flux_u, TSF%flux_v, G, halos=hs, scale=US%L_T_to_m_s)
+  !call uvchksum(mesg//" TSF%flux_[uv]", TSF%flux_u, TSF%flux_v, G, halos=hs, scale=US%L_T_to_m_s)
+  call hchksum(TSF%flux_u, trim(mesg)//" TSF%flux_u", G%HI, haloshift=hs, scale=US%L_T_to_m_s)
+  call hchksum(TSF%flux_v, trim(mesg)//" TSF%flux_v", G%HI, haloshift=hs, scale=US%L_T_to_m_s)
 
 end subroutine TSF_chksum
 

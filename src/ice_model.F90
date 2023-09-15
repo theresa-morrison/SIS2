@@ -566,14 +566,14 @@ subroutine set_ocean_top_fluxes(Ice, IST, IOF, FIA, OSS, G, US, IG, sCS)
 !   It is possible that the ice mass and surface pressure will be needed after
 ! the thermodynamic step, in which case this should be uncommented.
 !  ! Sum the concentration weighted mass.
-!  Ice%mi(:,:) = 0.0
-!  i_off = LBOUND(Ice%mi,1) - G%isc ; j_off = LBOUND(Ice%mi,2) - G%jsc
-!  !$OMP parallel do default(shared) private(i2,j2)
-!  do j=jsc,jec ; do k=1,ncat ; do i=isc,iec
-!    i2 = i+i_off ; j2 = j+j_off! Use these to correct for indexing differences.
-!    Ice%mi(i2,j2) = Ice%mi(i2,j2) + IST%part_size(i,j,k) * &
-!        (G%US%RZ_to_kg_m2 * ((IST%mH_snow(i,j,k) + IST%mH_pond(i,j,k)) + IST%mH_ice(i,j,k)))
-!  enddo ; enddo ; enddo
+  Ice%mi(:,:) = 0.0
+  i_off = LBOUND(Ice%mi,1) - G%isc ; j_off = LBOUND(Ice%mi,2) - G%jsc
+  !$OMP parallel do default(shared) private(i2,j2)
+  do j=jsc,jec ; do k=1,ncat ; do i=isc,iec
+    i2 = i+i_off ; j2 = j+j_off! Use these to correct for indexing differences.
+    Ice%mi(i2,j2) = Ice%mi(i2,j2) + IST%part_size(i,j,k) * &
+        (G%US%RZ_to_kg_m2 * ((IST%mH_snow(i,j,k) + IST%mH_pond(i,j,k)) + IST%mH_ice(i,j,k)))
+  enddo ; enddo ; enddo
 
   ! This block of code is probably unnecessary.
   Ice%flux_t(:,:) = 0.0 ; Ice%flux_q(:,:) = 0.0
@@ -607,12 +607,12 @@ subroutine set_ocean_top_fluxes(Ice, IST, IOF, FIA, OSS, G, US, IG, sCS)
 
 !   It is possible that the ice mass and surface pressure will be needed after
 ! the thermodynamic step, in which case this should be uncommented.
-!  if (IOF%slp2ocean) then
-!     Ice%p_surf(i2,j2) = US%RZ_T_to_kg_m2s*US%L_T_to_m_s*FIA%p_atm_surf(i,j) - 1e5 ! SLP - 1 std. atmosphere [Pa].
-!   else
-!     Ice%p_surf(i2,j2) = 0.0
-!   endif
-!   Ice%p_surf(i2,j2) = Ice%p_surf(i2,j2) + US%L_T_to_m_s**2*US%m_to_Z*G%g_Earth*Ice%mi(i2,j2)
+  if (IOF%slp2ocean) then
+    Ice%p_surf(i2,j2) = US%RZ_T_to_kg_m2s*US%L_T_to_m_s*FIA%p_atm_surf(i,j) - 1e5 ! SLP - 1 std. atmosphere [Pa].
+  else
+    Ice%p_surf(i2,j2) = 0.0
+  endif
+    Ice%p_surf(i2,j2) = Ice%p_surf(i2,j2) + US%L_T_to_m_s**2*US%m_to_Z*G%g_Earth*Ice%mi(i2,j2)
   enddo ; enddo
   if (allocated(IOF%melt_nudge)) then
     do j=jsc,jec ; do i=isc,iec
