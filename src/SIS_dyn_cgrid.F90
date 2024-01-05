@@ -1346,7 +1346,6 @@ subroutine EVP_step_loop(dt_slow, ci, ui, vi, mice, uo, vo, &
   type(unit_scale_type),             intent(in)    :: US    !< A structure with unit conversion factors
   type(SIS_C_dyn_CS),                pointer       :: CS    !< The control structure for this module
                      
-
   real,  intent(in   ) :: dt_slow !< The amount of time over which the ice
                                                             !! dynamics are to be advanced [T ~> s].
 

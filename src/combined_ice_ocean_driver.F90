@@ -479,7 +479,7 @@ subroutine direct_flux_ice_to_IOBbt(Ice, IOBbt)
 
 end subroutine direct_flux_ice_to_IOBbt  
  
-subroutine direct_flux_???_to_IOB(???, IOB)
+subroutine direct_flux_IOBbt_to_IOB(IOBbt, IOB)
   type(ice_ocean_boundary_type), &
                       intent(inout) :: IOB  !< A derived data type to specify properties
                                             !! and fluxes passed from ice to ocean
@@ -497,7 +497,7 @@ subroutine direct_flux_???_to_IOB(???, IOB)
 
    IOF%flux_u_ocn(i,j) = US%kg_m2s_to_RZ_T*US%m_s_to_L_T*Ice%flux_u(i2,j2)
 
-end subroutine direct_flux_???_to_IOB
+end subroutine direct_flux_IOBbt_to_IOB
 
 !> This subroutine is used to call SIS dynamics directly from MOM so it needs to public and visible to MOM
 subroutine do_SIS_dynamics(IOBbt, IOB, OPT, US)
@@ -569,11 +569,10 @@ subroutine do_SIS_dynamics(IOBbt, IOB, OPT, US)
   Time_cycle_start = CS%Time - real_to_time(US%T_to_s*dt_slow)
   call SIS_merged_dyn_cont(OSS, FIA, IOF, DS2d, sIST, dt_slow, Time_cycle_start, sG, US, sIG, dCS, sOBC)
 
-  ! Complete the category-resolved mass and  tracer transport and update the ice state type.
+  ! Complete the category-resolved mass and tracer transport and update the ice state type.
   ! This must be done before the next thermodynamic step.
   call complete_IST_transport(DS2d, CAS, sIST, dt_slow, sG, US, sIG, dCS)
   
- 
  ! Set up the stresses and surface pressure in the externally visible structure Ice.
   if (sIST%valid_IST) call ice_mass_from_IST(sIST, Ice%sCS%IOF, sG, sIG)
 
@@ -584,8 +583,6 @@ subroutine do_SIS_dynamics(IOBbt, IOB, OPT, US)
 
   if (Ice%sCS%debug) then
     call Ice_public_type_chksum("End update_ice_dynamics_trans", Ice, check_slow=.true.)
-
-
 
 ! TJM do direct flux from ??? to IOB - update dynamic vars
   call direct_flux_???_to_IOB(time_start_step, ???, IOB) 
