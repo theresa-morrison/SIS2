@@ -204,9 +204,6 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
         "ocean and slow ice layouts and domain sizes are identical.")
 
   if (CS%intersperse_ice_ocn) then
-    if (.not.CS%use_intersperse_bug) &
-      call direct_flux_ocn_to_OIB(time_start_update, Ocean_sfc, OIB, Ice, do_thermo=.true.)
-
     ! First step the ice, then ocean thermodynamics.    
     call update_ice_slow_thermo(Ice)
     
@@ -228,6 +225,9 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
         dyn_time_step = coupling_time_step - (time_start_step - time_start_update)
       endif
 
+      if (.not.CS%use_intersperse_bug) &
+        call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.true.)
+
       call update_ice_dynamics_trans(Ice, time_step=dyn_time_step, &
                         start_cycle=(ns==1), end_cycle=(ns==nstep), cycle_length=dt_coupling)
 
@@ -236,8 +236,8 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
       call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_step, dyn_time_step, &
                               update_dyn=.true., update_thermo=.false., &
                               start_cycle=.false., end_cycle=(ns==nstep), cycle_length=dt_coupling)
-      if (.not.CS%use_intersperse_bug) &
-        call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.false.)
+      !if (.not.CS%use_intersperse_bug) &
+      !  call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.false.)
            
       time_start_step = time_start_step + dyn_time_step
     enddo
@@ -421,19 +421,19 @@ subroutine direct_flux_ocn_to_OIB(Time, Ocean, OIB, Ice, do_thermo)
   do_therm = .true. ; if (present(do_thermo)) do_therm = do_thermo                                              
   do_area_weighted_flux = .false. !! Need to add option to account for area weighted fluxes                           
                                               
-  if (ASSOCIATED(OIB%u)) OIB%u = Ocean%u_surf
-  if (ASSOCIATED(OIB%v)) OIB%v = Ocean%v_surf
-  if (ASSOCIATED(OIB%sea_level)) OIB%sea_level = Ocean%sea_lev
+  if (ASSOCIATED(OIB%u)) OIB%u(:,:) = Ocean%u_surf(:,:)
+  if (ASSOCIATED(OIB%v)) OIB%v(:,:) = Ocean%v_surf(:,:)
+  if (ASSOCIATED(OIB%sea_level)) OIB%sea_level(:,:) = Ocean%sea_lev(:,:)
   
   if (do_therm) then
-   if (ASSOCIATED(OIB%t)) OIB%t = Ocean%t_surf
-   if (ASSOCIATED(OIB%s)) OIB%s = Ocean%s_surf
+   if (ASSOCIATED(OIB%t)) OIB%t(:,:) = Ocean%t_surf(:,:)
+   if (ASSOCIATED(OIB%s)) OIB%s(:,:) = Ocean%s_surf(:,:)
    if (ASSOCIATED(OIB%frazil)) then
 !   if(do_area_weighted_flux) then
 !     OIB%frazil = Ocean%frazil * Ocean%area
 !     call divide_by_area(OIB%frazil, Ice%area)
 !   else
-     OIB%frazil = Ocean%frazil
+     OIB%frazil(:,:) = Ocean%frazil(:,:)
 !   endif
    endif                                              
   endif           
