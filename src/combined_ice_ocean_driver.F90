@@ -456,6 +456,8 @@ subroutine direct_flux_ocn_to_OIB(Time, Ocean, OIB, Ice, do_thermo)
   call unpack_ocn_ice_bdry(OIB, Ice%sCS%OSS, Ice%sCS%IST%ITV, Ice%sCS%G, Ice%sCS%US, &
                                 Ice%sCS%specified_ice, Ice%ocean_fields)    
                                               
+  call translate_OSS_to_sOSS(Ice%sCS%OSS, Ice%sCS%IST, Ice%sCS%sOSS, Ice%sCS%G, Ice%sCS%US)
+
 end subroutine direct_flux_ocn_to_OIB                                        
                                             
 !> This subroutine does a direct copy of the fluxes from the ice data type into
