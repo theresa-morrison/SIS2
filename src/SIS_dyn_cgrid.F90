@@ -26,6 +26,7 @@ use MOM_io,            only : MOM_read_data
 use MOM_time_manager,  only : time_type, real_to_time, operator(+), operator(-)
 use MOM_time_manager,  only : set_date, get_time, get_date
 use MOM_unit_scaling,  only : unit_scale_type
+use MOM_forcing_type,  only : mech_forcing
 
 use SIS_diag_mediator, only : post_SIS_data, SIS_diag_ctrl
 use SIS_diag_mediator, only : query_SIS_averaging_enabled, enable_SIS_averaging
@@ -38,6 +39,7 @@ use SIS_framework,     only : safe_alloc
 use SIS_hor_grid,      only : SIS_hor_grid_type
 use SIS_types,         only : ice_state_type
 use SIS2_ice_thm,      only : get_SIS2_thermo_coefs
+use combined_ice_ocean_driver, only : direct_copy_from_EVPT, direct_copy_to_EVPT
 
 implicit none ; private
 
@@ -46,7 +48,7 @@ implicit none ; private
 public :: SIS_C_dyn_init, SIS_C_dynamics, SIS_C_dyn_end
 public :: SIS_C_dyn_register_restarts, SIS_C_dyn_read_alt_restarts
 public :: basal_stress_coeff_C, basal_stress_coeff_itd
-public :: SIS_C_EVP_state, EVP_step_loop
+public :: EVP_step_loop
 
 !> The control structure with parameters regulating C-grid ice dynamics
 type, public :: SIS_C_dyn_CS ; private
@@ -162,55 +164,6 @@ type, public :: SIS_C_dyn_CS ; private
   integer :: id_siu = -1, id_siv = -1, id_sispeed = -1 ! SIMIP diagnostics
   !!@}
 end type SIS_C_dyn_CS
-
-!> The control structure with the state that is used and updated in the EVP loop
-type SIS_C_EVP_state
-  real, allocatable, dimension(:,:) :: ci  !< Sea ice concentration [nondim]
-  real, allocatable, dimension(:,:) :: ui    !< Zonal ice velocity [L T-1 ~> m s-1]
-  real, allocatable, dimension(:,:) :: vi    !< Meridional ice velocity [L T-1 ~> m s-1]
-  real, allocatable, dimension(:,:) :: mice  !< Mass per unit ocean area of sea ice [R Z ~> kg m-2]
-  real, allocatable, dimension(:,:) :: fxat  !< Zonal air stress on ice [R Z L T-2 ~> Pa]
-  real, allocatable, dimension(:,:) :: fyat  !< Meridional air stress on ice [R Z L T-2 ~> Pa]
-
-  real, allocatable, dimension(:,:) :: &
-    pres_mice, & ! The ice internal pressure per unit column mass [L2 T-2 ~> N m kg-1].
-    diag_val, & ! A temporary diagnostic array.
-    del_sh_min_pr     ! When multiplied by pres_mice, this gives the minimum
-                ! value of del_sh that is used in the calculation of zeta [T-1 ~> s-1].
-                ! This is set based on considerations of numerical stability,
-                ! and varies with the grid spacing.  
-
-  real, allocatable, dimension(:,:) :: &
-    ui_min_trunc, &  ! The range of v-velocities beyond which the velocities
-    ui_max_trunc, &  ! are truncated [L T-1 ~> m s-1], or 0 for land cells
-    mi_u, &  ! The total ice and snow mass interpolated to u points [R Z ~> kg m-2].
-    f2dt_u, &! The squared effective Coriolis parameter at u-points times a
-             ! time step [T-1 ~> s-1].
-    PFu, &   ! Zonal hydrostatic pressure driven acceleration [L T-2 ~> m s-2].
-    I1_f2dt2_u  ! 1 / ( 1 + f^2 dt^2) at u-points [nondim].
-             
-  real, allocatable, dimension(:,:) :: &
-    vi_min_trunc, &  ! The range of v-velocities beyond which the velocities
-    vi_max_trunc, &  ! are truncated [L T-1 ~> m s-1], or 0 for land cells.
-    mi_v, &  ! The total ice and snow mass interpolated to v points [R Z ~> kg m-2].
-    f2dt_v, &! The squared effective Coriolis parameter at v-points times a
-             ! time step [T-1 ~> s-1].
-    PFv, &   !  hydrostatic pressure driven acceleration [L T-2 ~> m s-2].
-    I1_f2dt2_v  ! 1 / ( 1 + f^2 dt^2) at v-points [nondim].
-    
-  real, allocatable, dimension(:,:) :: &
-    azon, bzon, & !  _zon & _mer are the values of the Coriolis force which
-    czon, dzon, & ! are applied to the neighboring values of vi & ui,
-    amer, bmer, & ! respectively to get the barotropic inertial rotation,
-    cmer, dmer    ! in units of [T-1 ~> s-1].  azon and amer couple the same pair of
-                  ! velocities, but with the influence going in opposite
-                  ! directions.
-                  
-  real, allocatable, dimension(:,:) :: &
-    mi_ratio_A_q    ! A ratio of the masses interpolated to the faces around a
-             ! vorticity point that ranges between (4 mi_min/mi_max) and 1,
-             ! divided by the sum of the ocean areas around a point [L-2 ~> m-2].                              
-end type SIS_C_EVP_state
 
 contains
 
@@ -631,8 +584,8 @@ end subroutine find_ice_strength
 !~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~!
 !> SIS_C_dynamics takes a single dynamics timestep with EVP subcycles
 subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
-                          sea_lev, fxoc, fyoc, dt_slow, G, US, CS,
-                          first_call, second_call, IOBbt)
+                          sea_lev, fxoc, fyoc, dt_slow, G, US, CS )
+                          ! first_call, second_call, IOBbt)
 
   type(SIS_hor_grid_type),           intent(inout) :: G   !< The horizontal grid type
   real, dimension(SZI_(G),SZJ_(G)),  intent(in   ) :: ci  !< Sea ice concentration [nondim]
@@ -656,10 +609,6 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
                                                             !! dynamics are to be advanced [T ~> s].
   type(unit_scale_type),             intent(in)    :: US    !< A structure with unit conversion factors
   type(SIS_C_dyn_CS),                pointer       :: CS    !< The control structure for this module
-  logical,         optional, intent(in)    :: first_call
-  logical,         optional, intent(in)    :: second_call
-  type(ice_ocean_boundary_BT_type), &
-                   optional, intent(inout) :: IOBbt !! type containing the variables needed to do the EVP TJM
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G)) :: &
@@ -1049,31 +998,30 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
     call uvchksum("[uv]o in SIS_C_dynamics", uo, vo, G, scale=US%L_T_to_m_s)
   endif
 
-  if (first) then
-    call direct_copy_to_IOBbt(IOBbt, ci, ui, vi, mice, uo, vo, &
+  !if (first) then
+  !  call direct_copy_to_IOBbt(IOBbt, ci, ui, vi, mice, uo, vo, &
+  !                   fxat, fyat, fxoc, fyoc, pres_mice, diag_val, del_sh_min_pr, &
+  !                   ui_min_trunc, ui_max_trunc, vi_min_trunc, vi_max_trunc, &
+  !                   mi_u, f2dt_u, I1_f2dt2_u, PFu, mi_v, f2dt_v, I1_f2dt2_v, PFv, &
+  !                   azon, bzon, czon, dzon, amer, bmer, cmer, dmer, &
+  !                   mi_ratio_A_q)
+  !endif
+
+  !if (second) then
+  !  call direct_copy_from_IOBbt(IOBbt, ci, ui, vi, mice, uo, vo,EVPT!                   fxat, fyat, fxoc, fyoc, pres_mice, diag_val, del_sh_min_pr, &
+  !                   ui_min_trunc, ui_max_trunc, vi_min_trunc, vi_max_trunc, &
+  !                   mi_u, f2dt_u, I1_f2dt2_u, PFu, mi_v, f2dt_v, I1_f2dt2_v, PFv, &
+  !                   azon, bzon, czon, dzon, amer, bmer, cmer, dmer, &
+  !                   mi_ratio_A_q)
+  !endif
+
+  call EVP_step_loop(dt_slow, ci, ui, vi, mice, uo, vo, &
                      fxat, fyat, fxoc, fyoc, pres_mice, diag_val, del_sh_min_pr, &
                      ui_min_trunc, ui_max_trunc, vi_min_trunc, vi_max_trunc, &
                      mi_u, f2dt_u, I1_f2dt2_u, PFu, mi_v, f2dt_v, I1_f2dt2_v, PFv, &
                      azon, bzon, czon, dzon, amer, bmer, cmer, dmer, &
-                     mi_ratio_A_q)
-  endif
-
-  if (second) then
-    call direct_copy_from_IOBbt(IOBbt, ci, ui, vi, mice, uo, vo, &
-                     fxat, fyat, fxoc, fyoc, pres_mice, diag_val, del_sh_min_pr, &
-                     ui_min_trunc, ui_max_trunc, vi_min_trunc, vi_max_trunc, &
-                     mi_u, f2dt_u, I1_f2dt2_u, PFu, mi_v, f2dt_v, I1_f2dt2_v, PFv, &
-                     azon, bzon, czon, dzon, amer, bmer, cmer, dmer, &
-                     mi_ratio_A_q)
-  endif
-
-!  call EVP_step_loop(dt_slow, ci, ui, vi, mice, uo, vo, &
-!                     fxat, fyat, fxoc, fyoc, pres_mice, diag_val, del_sh_min_pr, &
-!                     ui_min_trunc, ui_max_trunc, vi_min_trunc, vi_max_trunc, &
-!                     mi_u, f2dt_u, I1_f2dt2_u, PFu, mi_v, f2dt_v, I1_f2dt2_v, PFv, &
-!                     azon, bzon, czon, dzon, amer, bmer, cmer, dmer, &
-!                     mi_ratio_A_q,  &
-!                     G, US, CS)
+                     mi_ratio_A_q,  &
+                     G, US, CS)
 
   if (CS%debug .or. CS%debug_redundant) &
     call uvchksum("[uv]i end SIS_C_dynamics", ui, vi, G, scale=US%L_T_to_m_s)
@@ -1271,13 +1219,14 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
 end subroutine SIS_C_dynamics
 
 
-subroutine direct_copy_to_IOBbt(IOBbt, dt_slow, ci, ui, vi, mice, uo, vo, &
+subroutine direct_copy_to_IOBbt(IOBbt, dt_slow, G, ci, ui, vi, mice, uo, vo, &
                        fxat, fyat, fxoc, fyoc, pres_mice, diag_val, del_sh_min_pr, &
                        ui_min_trunc, ui_max_trunc, vi_min_trunc, vi_max_trunc, &
                        mi_u, f2dt_u, I1_f2dt2_u, PFu, mi_v, f2dt_v, I1_f2dt2_v, PFv, &
                        azon, bzon, czon, dzon, amer, bmer, cmer, dmer, &
                        mi_ratio_A_q)
 
+  type(SIS_hor_grid_type),     intent(in)    :: G    !< The horizontal grid type
   real,  intent(in   ) :: dt_slow !< The amount of time over which the ice
                                   !! dynamics are to be advanced [T ~> s].
   real, dimension(SZI_(G),SZJ_(G)),  intent(in   ) :: ci  !< Sea ice concentration [nondim]
@@ -1334,33 +1283,49 @@ subroutine direct_copy_to_IOBbt(IOBbt, dt_slow, ci, ui, vi, mice, uo, vo, &
 
 end subroutine direct_copy_to_IOBbt
 
-subroutine EVP_step_loop(dt_slow, ci, ui, vi, mice, uo, vo, &
-                     fxat, fyat, fxoc, fyoc, pres_mice, diag_val, del_sh_min_pr, &
-                     ui_min_trunc, ui_max_trunc, vi_min_trunc, vi_max_trunc, &
-                     mi_u, f2dt_u, I1_f2dt2_u, PFu, mi_v, f2dt_v, I1_f2dt2_v, PFv, &
-                     azon, bzon, czon, dzon, amer, bmer, cmer, dmer, &
-                     mi_ratio_A_q,  &
-                     G, US, CS)
-                     
-  type(SIS_hor_grid_type),           intent(inout) :: G   !< The horizontal grid type
-  type(unit_scale_type),             intent(in)    :: US    !< A structure with unit conversion factors
-  type(SIS_C_dyn_CS),                pointer       :: CS    !< The control structure for this module
+! subroutine EVP_step_loop(dt_slow, ci, ui, vi, mice, uo, vo, &
+!                     fxat, fyat, fxoc, fyoc, pres_mice, diag_val, del_sh_min_pr, &
+!                     ui_min_trunc, ui_max_trunc, vi_min_trunc, vi_max_trunc, &
+!                     mi_u, f2dt_u, I1_f2dt2_u, PFu, mi_v, f2dt_v, I1_f2dt2_v, PFv, &
+!                     azon, bzon, czon, dzon, amer, bmer, cmer, dmer, &
+!                     mi_ratio_A_q,  &
+!                     G, US, CS)
+! The EVP function from the SIS2 model
+subroutine EVP_step_loop(forces, oG, uo, vo, PFu, PFv, fxoc, fyoc)
+! In need from sea-ice: ci, ui, vi, mice, pres_mice, diag_val (?), del_sh_min_pr (?),
+!                       ui_min_trunc, ui_max_trunc, vi_min_trunc, vi_max_trunc,
+!                       mi_u, f2dt_u, I1_f2dt2_u, mi_v, f2dt_v, I1_f2dt2_v, 
+!                       azon, bzon, czon, dzon, amer, bmer, cmer, dmer, mi_ratio_A_q
+! Could get somewhere else: fxat, fyat, dt_slow (?)
+! need new version from btstep: uo, vo, PFu, PFv (PF ~ sea level) 
+! Out: pass to SIS2: ui, vi
+! Out: pass to bt_step: fxoc, fyoc
+  
+  type(mech_forcing) , intent(inout) :: forces
+ 
+  type(ocean_grid_type),  intent(inout) :: oG       !< The ocean's grid structure.  
+                    
+  real, dimension(SZIB_(oG),SZJ_( oG)), intent(in   ) :: uo    !< Zonal ocean velocity [L T-1 ~> m s-1]
+  real, dimension(SZI_( oG),SZJB_(oG)), intent(in   ) :: vo    !< Meridional ocean velocity [L T-1 ~> m s-1]
+  real, dimension(SZIB_(oG),SZJ_( oG)), intent(inout) :: fxoc  !< Zonal ice stress on ocean [R Z L T-2 ~> Pa]
+  real, dimension(SZI_( oG),SZJB_(oG)), intent(inout) :: fyoc  !< Meridional ice stress on ocean [R Z L T-2 ~> Pa]
+  
+  ! Local Vars                               
+  type(SIS_hor_grid_type)            :: G   !< The horizontal grid type
+  type(unit_scale_type)              :: US    !< A structure with unit conversion factors
+  type(SIS_C_dyn_CS)                 :: CS    !< The control structure for this module
                      
   real,  intent(in   ) :: dt_slow !< The amount of time over which the ice
                                                             !! dynamics are to be advanced [T ~> s].
 
-  real, dimension(SZI_(G),SZJ_(G)),  intent(in   ) :: ci  !< Sea ice concentration [nondim]
-  real, dimension(SZIB_(G),SZJ_(G)), intent(inout) :: ui    !< Zonal ice velocity [L T-1 ~> m s-1]
-  real, dimension(SZI_(G),SZJB_(G)), intent(inout) :: vi    !< Meridional ice velocity [L T-1 ~> m s-1]
-  real, dimension(SZI_(G),SZJ_(G)),  intent(in   ) :: mice  !< Mass per unit ocean area of sea ice [R Z ~> kg m-2]
-  real, dimension(SZIB_(G),SZJ_(G)), intent(in   ) :: uo    !< Zonal ocean velocity [L T-1 ~> m s-1]
-  real, dimension(SZI_(G),SZJB_(G)), intent(in   ) :: vo    !< Meridional ocean velocity [L T-1 ~> m s-1]
-  real, dimension(SZIB_(G),SZJ_(G)), intent(in   ) :: fxat  !< Zonal air stress on ice [R Z L T-2 ~> Pa]
-  real, dimension(SZI_(G),SZJB_(G)), intent(in   ) :: fyat  !< Meridional air stress on ice [R Z L T-2 ~> Pa]
-  real, dimension(SZIB_(G),SZJ_(G)), intent(inout) :: fxoc  !< Zonal ice stress on ocean [R Z L T-2 ~> Pa]
-  real, dimension(SZI_(G),SZJB_(G)), intent(inout) :: fyoc  !< Meridional ice stress on ocean [R Z L T-2 ~> Pa]
+  real, dimension(SZI_(G),SZJ_(G))    :: ci  !< Sea ice concentration [nondim]
+  real, dimension(SZIB_(G),SZJ_(G))   :: ui    !< Zonal ice velocity [L T-1 ~> m s-1]
+  real, dimension(SZI_(G),SZJB_(G))   :: vi    !< Meridional ice velocity [L T-1 ~> m s-1]
+  real, dimension(SZI_(G),SZJ_(G))    :: mice  !< Mass per unit ocean area of sea ice [R Z ~> kg m-2]
+  real, dimension(SZIB_(G),SZJ_(G))   :: fxat  !< Zonal air stress on ice [R Z L T-2 ~> Pa]
+  real, dimension(SZI_(G),SZJB_(G))   :: fyat  !< Meridional air stress on ice [R Z L T-2 ~> Pa]
 
-  real, dimension(SZI_(G),SZJ_(G)), intent(inout) :: &
+  real, dimension(SZI_(G),SZJ_(G))  :: &
     pres_mice, & ! The ice internal pressure per unit column mass [L2 T-2 ~> N m kg-1].
     diag_val, & ! A temporary diagnostic array.
     del_sh_min_pr     ! When multiplied by pres_mice, this gives the minimum
@@ -1368,7 +1333,7 @@ subroutine EVP_step_loop(dt_slow, ci, ui, vi, mice, uo, vo, &
                 ! This is set based on considerations of numerical stability,
                 ! and varies with the grid spacing.  
 
-  real, dimension(SZIB_(G),SZJ_(G)), intent(in   ) :: &
+  real, dimension(SZIB_(G),SZJ_(G))  :: &
     ui_min_trunc, &  ! The range of v-velocities beyond which the velocities
     ui_max_trunc, &  ! are truncated [L T-1 ~> m s-1], or 0 for land cells
     mi_u, &  ! The total ice and snow mass interpolated to u points [R Z ~> kg m-2].
@@ -1377,7 +1342,7 @@ subroutine EVP_step_loop(dt_slow, ci, ui, vi, mice, uo, vo, &
     PFu, &   ! Zonal hydrostatic pressure driven acceleration [L T-2 ~> m s-2].
     I1_f2dt2_u  ! 1 / ( 1 + f^2 dt^2) at u-points [nondim].
              
-  real, dimension(SZI_(G),SZJB_(G)), intent(in   ) :: &
+  real, dimension(SZI_(G),SZJB_(G))  :: &
     vi_min_trunc, &  ! The range of v-velocities beyond which the velocities
     vi_max_trunc, &  ! are truncated [L T-1 ~> m s-1], or 0 for land cells.
     mi_v, &  ! The total ice and snow mass interpolated to v points [R Z ~> kg m-2].
@@ -1386,7 +1351,7 @@ subroutine EVP_step_loop(dt_slow, ci, ui, vi, mice, uo, vo, &
     PFv, &   !  hydrostatic pressure driven acceleration [L T-2 ~> m s-2].
     I1_f2dt2_v  ! 1 / ( 1 + f^2 dt^2) at v-points [nondim].
     
-  real, dimension(SZIB_(G),SZJ_(G)), intent(in   ) :: &
+  real, dimension(SZIB_(G),SZJ_(G))  :: &
     azon, bzon, & !  _zon & _mer are the values of the Coriolis force which
     czon, dzon, & ! are applied to the neighboring values of vi & ui,
     amer, bmer, & ! respectively to get the barotropic inertial rotation,
@@ -1394,12 +1359,11 @@ subroutine EVP_step_loop(dt_slow, ci, ui, vi, mice, uo, vo, &
                   ! velocities, but with the influence going in opposite
                   ! directions.
                   
-  real, dimension(SZIB_(G),SZJB_(G)), intent(in   ) :: &
+  real, dimension(SZIB_(G),SZJB_(G))  :: &
     mi_ratio_A_q    ! A ratio of the masses interpolated to the faces around a
              ! vorticity point that ranges between (4 mi_min/mi_max) and 1,
              ! divided by the sum of the ocean areas around a point [L-2 ~> m-2].
 
-  ! Local Vars                               
   real, dimension(SZI_(G),SZJ_(G)) :: &
     sh_Dt, &    ! sh_Dt is the horizontal tension (du/dx - dv/dy) including
                 ! all metric terms [T-1 ~> s-1].
@@ -1496,6 +1460,14 @@ subroutine EVP_step_loop(dt_slow, ci, ui, vi, mice, uo, vo, &
   integer :: halo_sh_Ds  ! The halo size that can be used in calculating sh_Ds.
   integer :: i, j, isc, iec, jsc, jec, n
   isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec
+
+  ! first: extract the info from the EVPT 
+  call direct_copy_from_EVPT(forces%EVPT, dt_slow, G, ci, ui, vi, mice,  &
+                        fxat, fyat, pres_mice, diag_val, del_sh_min_pr, &
+                        ui_min_trunc, ui_max_trunc, vi_min_trunc, vi_max_trunc, &
+                        mi_u, f2dt_u, I1_f2dt2_u, PFu, mi_v, f2dt_v, I1_f2dt2_v, PFv, &
+                        azon, bzon, czon, dzon, amer, bmer, cmer, dmer, &
+                        mi_ratio_A_q)
 
   if (CS%dt_Rheo > 0.0) then
     EVP_steps = max(CEILING(dt_slow/CS%dt_Rheo - 0.0001), 1)

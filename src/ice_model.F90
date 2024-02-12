@@ -51,6 +51,7 @@ use ice_bergs,          only : icebergs, icebergs_run, icebergs_init, icebergs_e
 use ice_boundary_types, only : ocean_ice_boundary_type, atmos_ice_boundary_type, land_ice_boundary_type
 use ice_boundary_types, only : ocn_ice_bnd_type_chksum, atm_ice_bnd_type_chksum
 use ice_boundary_types, only : lnd_ice_bnd_type_chksum
+!use ice_boundary_types, only : ice_ocean_boundary_BT_type
 use ice_grid,           only : set_ice_grid, ice_grid_end, ice_grid_type
 use ice_spec_mod,       only : get_sea_surface
 use ice_type_mod,       only : ice_data_type, dealloc_ice_arrays
@@ -1635,6 +1636,8 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
   type(SIS_hor_grid_type), pointer :: fG => NULL()
   type(MOM_domain_type), pointer :: fGD => NULL()
 
+  !type(ice_ocean_boundary_BT_type), pointer :: IOBbt => NULL()
+
   ! Parameters that are read in and used to initialize other modules.  If those
   ! other modules had control states, these would be moved to those modules.
   real :: mom_rough_ice  ! momentum same, cd10=(von_k/ln(10/z0))^2 [m].
@@ -2491,6 +2494,11 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
       endif
     endif
 
+    ! initalize IOBbt type for embedded coupling.
+    ! if something
+        call embedded_init(Ice, IOBbt)
+    ! endif
+
     ! Do any error checking here.
     if (Ice%sCS%debug) call ice_grid_chksum(sG, US, haloshift=1)
 
@@ -2672,6 +2680,15 @@ subroutine update_ice_atm_deposition_flux( Atmos_boundary, Ice )
   call accumulate_deposition_fluxes(Atmos_boundary, Ice%fCS%FIA, Ice%fCS%G, Ice%fCS%IG)
 
 end subroutine update_ice_atm_deposition_flux
+
+!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~!
+!subroutine embedded_init(Ice, IOBbt)
+!  type(ice_data_type), intent(inout) :: Ice !< The publicly visible ice data type.
+!  type(ice_ocean_boundary_BT_type), intent(inout) :: IOBbt
+!
+!
+!
+!end subroutine
 
 
 !~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~!

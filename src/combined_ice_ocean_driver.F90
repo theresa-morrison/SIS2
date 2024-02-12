@@ -27,11 +27,16 @@ use ice_model_mod,      only : update_ice_slow_thermo, update_ice_dynamics_trans
 use ice_model_mod,      only : unpack_ocn_ice_bdry
 use ocean_model_mod,    only : update_ocean_model, ocean_model_end
 use ocean_model_mod,    only : ocean_public_type, ocean_state_type, ice_ocean_boundary_type
-use ice_boundary_types, only : ocean_ice_boundary_type, ice_ocean_boundary_BT_type
+use ice_boundary_types, only : ocean_ice_boundary_type 
+
+use MOM_forcing_type,  only : SIS_C_EVP_state
+use SIS_dyn_evp,       only : setup_SIS_dynamics 
 
 implicit none ; private
 
 public :: update_slow_ice_and_ocean, ice_ocean_driver_init, ice_ocean_driver_end
+public :: direct_copy_to_EVPT, direct_copy_from_EVPT
+
 
 !> The control structure for the combined ice-ocean driver
 type, public :: ice_ocean_driver_type ; private
@@ -43,6 +48,7 @@ type, public :: ice_ocean_driver_type ; private
   logical :: intersperse_ice_ocn !< If true, intersperse the ice and ocean thermodynamic and
                               !! dynamic updates.  This requires the update ocean (MOM6) interfaces
                               !! used with single_MOM_call=.false. The default is false.
+  logical :: embedded_ice_ocn !< If true, embedde the ice and ocean thermodynamic and
   logical :: use_intersperse_bug !< If true, use a bug in the intersperse option where the ocean 
                               !! state was not being passed to the sea ice.
   real :: dt_coupled_dyn      !< The time step for coupling the ice and ocean dynamics when
@@ -121,6 +127,9 @@ subroutine ice_ocean_driver_init(CS, Time_init, Time_in)
   call get_param(param_file, mdl, "INTERSPERSE_ICE_OCEAN", CS%intersperse_ice_ocn, &
                  "If true, intersperse the ice and ocean thermodynamic and "//&
                  "and dynamic updates.", default=.false.)
+  call get_param(param_file, mdl, "EMBEDDED_ICE_OCEAN", CS%embedded_ice_ocn, & 
+                 "If true, embed the ice EVP update within the ocean "//&
+                 "barotropic update.", default=.false.)
   call get_param(param_file, mdl, "DT_COUPLED_ICE_OCEAN_DYN", CS%dt_coupled_dyn, &
                  "The time step for coupling the ice and ocean dynamics when "//&
                  "INTERSPERSE_ICE_OCEAN is true, or <0 to use the coupled timestep.", &
@@ -170,6 +179,7 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
   real :: dt_coupling        ! The time step of the thermodynamic update calls [s].
   type(time_type) :: dyn_time_step   ! The length of the dynamic call update calls.
   integer :: ns, nstep
+  type(SIS_C_EVP_state) :: EVPT
 
   call callTree_enter("update_ice_and_ocean(), combined_ice_ocean_driver.F90")
   dt_coupling = time_type_to_real(coupling_time_step)
@@ -242,8 +252,6 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
       time_start_step = time_start_step + dyn_time_step
     enddo
   elseif (CS%embedded_ice_ocn) then
-    call direct_flux_ocn_to_OIB(time_start_update, Ocean_sfc, OIB, Ice, do_thermo=.true.)
-
     ! First step the ice, then ocean thermodynamics.    
     call update_ice_slow_thermo(Ice)
     
@@ -265,23 +273,16 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
         dyn_time_step = coupling_time_step - (time_start_step - time_start_update)
       endif
 
-      ! convert  the category-resolved ice state into the simplified 2-d ice state and a cell averaged state
-      call convert_IST_to_simple_state(Ice%sCS%IST, Ice%CS%DS2d, Ice%CS%CAS, Ice%sCS%G, Ice%sCS%US, Ice%sCS%IG, Ice%sCS%dyn_trans_CSp)
+      call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.true.)
 
-!      call update_ice_dynamics_trans(Ice, time_step=dyn_time_step, &
-!                                     start_cycle=(ns==1), end_cycle=(ns==nstep), cycle_length=dt_coupling)
+      call setup_SIS_dynamics(Ice, EVPT, time_step=dyn_time_step, cycle_length=dt_coupling)
 
-      ! package the simple 2-d ice state in the IOBbt type
-      call direct_flux_ice_to_IOB(time_start_step, Ice, IOB, do_thermo=.false.)
-      call direct_flux_ice_to_IOBbt(Ice, IOBbt)
-
+      call direct_flux_ice_to_IOB(time_start_step, Ice, IOB, do_EVP=.true., EVP_type=EVPT)
+      
       call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_step, dyn_time_step, &
                               update_dyn=.true., update_thermo=.false., &
-                              start_cycle=.false., end_cycle=(ns==nstep), cycle_length=dt_coupling, &
-                              IOBbt)
+                              start_cycle=.false., end_cycle=(ns==nstep), cycle_length=dt_coupling)
 
-      call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.false.)
-           
       time_start_step = time_start_step + dyn_time_step
     enddo
   else
@@ -308,7 +309,7 @@ end subroutine update_slow_ice_and_ocean
 
 !> This subroutine does a direct copy of the fluxes from the ice data type into
 !! a ice-ocean boundary type on the same grid.
-subroutine direct_flux_ice_to_IOB(Time, Ice, IOB, do_thermo)
+subroutine direct_flux_ice_to_IOB(Time, Ice, IOB, do_thermo, do_evp, EVP_type)
   type(time_type),    intent(in)    :: Time !< Current time
   type(ice_data_type),intent(in)    :: Ice  !< A derived data type to specify ice boundary data
   type(ice_ocean_boundary_type), &
@@ -316,13 +317,20 @@ subroutine direct_flux_ice_to_IOB(Time, Ice, IOB, do_thermo)
                                             !! and fluxes passed from ice to ocean
   logical,  optional, intent(in)    :: do_thermo !< If present and false, do not update the
                                             !! thermodynamic or tracer fluxes.
+  logical,  optional, intent(in)    :: do_evp !< If present and false, do not update the
+  type(SIS_C_EVP_state) :: EVPT
 
   integer :: i, j, is, ie, js, je, i_off, j_off, n, m
-  logical :: used, do_therm
+  logical :: used, do_therm, do_evpt
 
   call cpu_clock_begin(fluxIceOceanClock)
 
   do_therm = .true. ; if (present(do_thermo)) do_therm = do_thermo
+  do_evpt = .false. ; if (present(do_evpt)) do_evpt = do_evp
+
+  if (do_evpt) then
+    if (ASSOCIATED(IOB%EVPT)) IOB%EVPT = EVP_type
+  endif
 
   ! Do a direct copy of the ice surface fluxes into the Ice-ocean-boundary type.
   ! It is inefficient, but there is not a problem if fields are copied more than once.
@@ -460,137 +468,6 @@ subroutine direct_flux_ocn_to_OIB(Time, Ocean, OIB, Ice, do_thermo)
 
 end subroutine direct_flux_ocn_to_OIB                                        
                                             
-!> This subroutine does a direct copy of the fluxes from the ice data type into
-!! a ice-ocean boundary type on the same grid.
-subroutine direct_flux_ice_to_IOBbt(Ice, IOBbt)
-  type(ice_data_type),intent(in)    :: Ice  !< A derived data type to specify ice boundary data
-  type(ice_ocean_boundary_BT_type), intent(inout) :: IOBbt  !< A derived data type to specify properties
-                                            !! and fluxes passed from ice to ocean specifcally those
-                                            !! needed in the bartorpic driver.
-  IOBbt%IST = Ice%sCS%IST
-  IOBbt%IG  = Ice%sCS%IG
-  IOBbt%G   = Ice%sCS%G
-  IOBbt%FIA = Ice%sCS%FIA
-  IOBbt%IOF = Ice%sCS%IOF
-
-  IOBbt%OBC = Ice%OBC
-
-  IOBbt%CS   = Ice%sCS%dyn_trans_CSp
-
-  IOBbt%dt_slow = Ice%US%s_to_T*time_type_to_real(Ice%sCS%Time_step_slow)
-
-end subroutine direct_flux_ice_to_IOBbt  
- 
-subroutine direct_flux_IOBbt_to_IOB(IOBbt, IOB)
-  type(ice_ocean_boundary_type), &
-                      intent(inout) :: IOB  !< A derived data type to specify properties
-                                            !! and fluxes passed from ice to ocean
-  integer :: i, j, is, ie, js, je, i_off, j_off, n, m
-  ! need to update  - what is changed and how is it stored if it's not coming from ice?
-  if (ASSOCIATED(IOB%u_flux)) IOB%u_flux(:,:) = Ice%flux_u(:,:)
-  if (ASSOCIATED(IOB%v_flux)) IOB%v_flux(:,:) = Ice%flux_v(:,:)
-  if (ASSOCIATED(IOB%p     )) IOB%p(:,:) = Ice%p_surf(:,:)
-  if (ASSOCIATED(IOB%mi    )) IOB%mi(:,:) = Ice%mi(:,:)
-  if (ASSOCIATED(IOB%stress_mag)) IOB%stress_mag(:,:) = Ice%stress_mag(:,:)
-  if (ASSOCIATED(IOB%ustar_berg)) IOB%ustar_berg(:,:) = Ice%ustar_berg(:,:)
-  if (ASSOCIATED(IOB%area_berg)) IOB%area_berg(:,:) = Ice%area_berg(:,:)
-  if (ASSOCIATED(IOB%mass_berg)) IOB%mass_berg(:,:) = Ice%mass_berg(:,:)
-
-
-   IOF%flux_u_ocn(i,j) = US%kg_m2s_to_RZ_T*US%m_s_to_L_T*Ice%flux_u(i2,j2)
-
-end subroutine direct_flux_IOBbt_to_IOB
-
-!> This subroutine is used to call SIS dynamics directly from MOM so it needs to public and visible to MOM
-subroutine do_SIS_dynamics(IOBbt, IOB, OPT, US)
-  type(ice_ocean_boundary_BT_type), intent(inout) :: IOBbt  !< A derived data type to specify properties
-                                                            !! and fluxes passed from ice to ocean - specifcally those
-  type(ice_ocean_boundary_type),    intent(inout) :: IOB    !< A structure containing the various forcing
-                                                            !! fields going from the ice to the ocean
-  type(ocean_public_type),          intent(inout) :: OPT    !< A structure containing all the publicly visible
-                                                            !! ocean surface fields after a coupling time step. 
-  type(unit_scale_type),            intent(in)    :: US     !< A structure with unit conversion factors
-
-  ! Local variables
-!  type(ice_data_type),        :: Ice !< The publicly visible ice data type.
-  type(ocean_sfc_state_type), :: OSS !< A structure containing the arrays that describe
-                                     !! the ocean's surface state for the ice model.
-!  type(ice_ocean_flux_type),  :: IOF !< A structure containing fluxes from the ice to
-                                     !! the ocean that are calculated by the ice model.
-!  type(dyn_trans_CS), pointer :: CS  !< The control structure for the SIS_dyn_trans module
-!  type(ice_OBC_type), pointer :: OBC !< Open boundary structure.
-  real                        :: dt_slow !< The slow ice dynamics timestep [T ~> s].
-  type(time_type)             :: Time_cycle_start ! The model's time at the start of an advective cycle.
-                            
-  ! Local variables
-  ! These pointers are used to simplify the code below.
-  type(ice_state_type),          pointer :: sIST => NULL()
-  type(ice_grid_type),           pointer :: sIG => NULL()
-  type(SIS_hor_grid_type),       pointer :: sG => NULL()
-  type(fast_ice_avg_type),       pointer :: FIA => NULL()
-  type(ice_ocean_flux_type),     pointer :: IOF => NULL() 
-  type(ice_OBC_type),            pointer :: sOBC => NULL() !< Open boundary structure.
-  type(dyn_state_2d),            pointer :: DS2d => NULL()        !< A simplified 2-d description of the ice state integrated across thickness categories and layers.
-  type(cell_average_state_type), pointer :: CAS => NULL()
-  type(dyn_trans_CS),            pointer :: dCS =>  NULL()  !< The control structure for the SIS_dyn_trans module
-
-  ! takes OPT and converts it to the OSS type - is the same as direct_flux_ocn_to_OIB + unpack - without the intermediate of OIB? 
-  ! get the ocean state
-  call convert_OPT_to_OSS(OPT, OSS)
-
-! call SIS_multi_dyn_trans(sIST, Ice%sCS%OSS, FIA, Ice%sCS%IOF, dt_slow, Ice%sCS%dyn_trans_CSp, &
-!                          Ice%icebergs, sG, US, sIG, Ice%sCS%SIS_tracer_flow_CSp, &
-!                          Ice%OBC, start_cycle, end_cycle, cycle_length)
-
-  sIST => IOBbt%IST ; sIG => IOBbt%IG ; sG => IOBbt%G ; FIA => IOBbt%FIA 
-  IOF => IOBbt%IOF ; sOBC => IOBbt%OBC ; DS2d => IOBbt%CS%DS2d ; CAS => IOBbt%CS%CAS
-  dCS => IOBbt%CS
-  dt_slow = US%s_to_T*time_type_to_real(IOBbt%Time_step_slow)
-  if (present(time_step)) dt_slow = US%s_to_T*time_type_to_real(time_step)
-         
-! then basically do SIS_multi_dyn_trans 
-  if (.not.CS%merged_cont) call SIS_error(FATAL, &
-          "SIS_multi_dyn_trans should not be called unless MERGED_CONTINUITY=True.")
-
-  ! Do halo updates on the forcing fields, as necessary.  This must occur before
-  ! the call to SIS_dynamics_trans, because update_icebergs does its own halo
-  ! updates, and slow_thermodynamics only works on the computational domain.
-  call pass_vector(FIA%WindStr_x, FIA%WindStr_y, sG%Domain, stagger=AGRID, complete=.false.)
-  call pass_vector(FIA%WindStr_ocn_x, FIA%WindStr_ocn_y, sG%Domain, stagger=AGRID)
-  call pass_var(FIA%ice_cover, sG%Domain, complete=.false.)
-  call pass_var(FIA%ice_free,  sG%Domain, complete=.true.)
-  if (sIST%valid_IST) then
-    call pass_var(sIST%part_size, sG%Domain)
-    call pass_var(sIST%mH_ice, sG%Domain, complete=.false.)
-    call pass_var(sIST%mH_pond, sG%Domain, complete=.false.)
-    call pass_var(sIST%mH_snow, sG%Domain, complete=.true.)
-  endif
-  
-  ! Update the category-merged dynamics and use the merged continuity equation.
-  ! This could be called as many times as necessary.
-  Time_cycle_start = CS%Time - real_to_time(US%T_to_s*dt_slow)
-  call SIS_merged_dyn_cont(OSS, FIA, IOF, DS2d, sIST, dt_slow, Time_cycle_start, sG, US, sIG, dCS, sOBC)
-
-  ! Complete the category-resolved mass and tracer transport and update the ice state type.
-  ! This must be done before the next thermodynamic step.
-  call complete_IST_transport(DS2d, CAS, sIST, dt_slow, sG, US, sIG, dCS)
-  
- ! Set up the stresses and surface pressure in the externally visible structure Ice.
-  if (sIST%valid_IST) call ice_mass_from_IST(sIST, Ice%sCS%IOF, sG, sIG)
-
-  if (Ice%sCS%debug) then
-    call IOF_chksum("Before set_ocean_top_dyn_fluxes", IOF, sG, US, mech_fluxes=.true.)
-  endif
-  call set_ocean_top_dyn_fluxes(Ice, IOF, FIA, sG, US, Ice%sCS)
-
-  if (Ice%sCS%debug) then
-    call Ice_public_type_chksum("End update_ice_dynamics_trans", Ice, check_slow=.true.)
-
-! TJM do direct flux from ??? to IOB - update dynamic vars
-  call direct_flux_???_to_IOB(time_start_step, ???, IOB) 
-
-end subroutine do_SIS_dynamics
-
 !=======================================================================
 !>   The subroutine ice_ocean_driver_end terminates the model run, saving
 !! the ocean and slow ice states in restart files and deallocating any data

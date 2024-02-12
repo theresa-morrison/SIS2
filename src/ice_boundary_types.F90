@@ -15,32 +15,39 @@ use SIS_framework,     only : coupler_2d_bc_type, coupler_3d_bc_type
 use SIS_framework,     only : SIS_chksum, coupler_type_write_chksums
 use iso_fortran_env,   only : int64
 
+use SIS_types,         only : ice_ocean_flux_type, fast_ice_avg_type
+use SIS_types,         only : ice_state_type 
+use ice_grid,          only : ice_grid_type
+use SIS_hor_grid,      only : SIS_hor_grid_type 
+use SIS_open_boundary, only : ice_OBC_type
+!use SIS_dyn_trans,     only : dyn_trans_CS
+
 implicit none ; private
 
 public :: ocean_ice_boundary_type, atmos_ice_boundary_type
 public :: land_ice_boundary_type
 public :: ocn_ice_bnd_type_chksum, atm_ice_bnd_type_chksum
 public :: lnd_ice_bnd_type_chksum
-public :: ice_ocean_boundary_BT_type
+!public :: ice_ocean_boundary_BT_type
 
 !   The following three types are for data exchange with the FMS coupler
 ! they are defined here but declared in coupler_main and allocated in flux_init.
 
 !> A type used to sneak data from SIS2 into MOM6 (and back) will be simplified over time to include 
 !! just the essentials needed by the sea ice rheology
-type ice_ocean_boundary_BT_type
-!  sIST => IOBbt%IST ; sIG => IOBbt%IG ; sG => IOBbt%G ; FIA => IOBbt%FIA        
-!  IOF => IOBbt%IOF ; sOBS => IOBbt%OBC ; DS2d => IOBbt%DS2d ; CAS => IOBbt%CAS
- type(ice_state_type),          pointer :: IST => NULL()
- type(ice_grid_type),           pointer :: IG => NULL()
- type(SIS_hor_grid_type),       pointer :: G => NULL()
- type(fast_ice_avg_type),       pointer :: FIA => NULL()
- type(ice_ocean_flux_type),     pointer :: IOF => NULL()
- type(ice_OBC_type),            pointer :: OBC => NULL() !< Open boundary structure.
- type(dyn_trans_CS),            pointer :: CS =>  NULL()  !< The control structure for the SIS_dyn_trans module
- real   :: dt_slow
-
-end type ice_ocean_boundary_BT_type
+!type ice_ocean_boundary_BT_type
+!!  sIST => IOBbt%IST ; sIG => IOBbt%IG ; sG => IOBbt%G ; FIA => IOBbt%FIA        
+!!  IOF => IOBbt%IOF ; sOBS => IOBbt%OBC ; DS2d => IOBbt%DS2d ; CAS => IOBbt%CAS
+! type(ice_state_type),          pointer :: IST => NULL()
+! type(ice_grid_type),           pointer :: IG => NULL()
+! type(SIS_hor_grid_type),       pointer :: G => NULL()
+! type(fast_ice_avg_type),       pointer :: FIA => NULL()
+! type(ice_ocean_flux_type),     pointer :: IOF => NULL()
+! type(ice_OBC_type),            pointer :: OBC => NULL() !< Open boundary structure.
+! type(dyn_trans_CS),            pointer :: CS =>  NULL()  !< The control structure for the SIS_dyn_trans module
+! real   :: dt_slow
+!
+!end type ice_ocean_boundary_BT_type
 
 !> A type for exchange between the ocean and the sea ice
 type ocean_ice_boundary_type

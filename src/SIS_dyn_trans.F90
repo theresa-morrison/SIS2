@@ -70,15 +70,14 @@ implicit none ; private
 
 #include <SIS2_memory.h>
 
-public :: SIS_dynamics_trans, SIS_multi_dyn_trans, update_icebergs, dyn_trans_CS
+public :: SIS_dynamics_trans, SIS_multi_dyn_trans, update_icebergs, dyn_trans_CS 
 public :: slab_ice_dyn_trans
 public :: SIS_dyn_trans_register_restarts, SIS_dyn_trans_init, SIS_dyn_trans_end
 public :: SIS_dyn_trans_read_alt_restarts, stresses_to_stress_mag
 public :: SIS_dyn_trans_transport_CS, SIS_dyn_trans_sum_output_CS
-public :: dyn_trans_CS
 
 !> The control structure for the SIS_dyn_trans module
-type dyn_trans_CS ; ! private
+type :: dyn_trans_CS ;  private
   logical :: Cgrid_dyn    !< If true use a C-grid discretization of the sea-ice dynamics.
   real    :: dt_ice_dyn   !< The time step used for the slow ice dynamics, including
                           !! stepping the continuity equation and interactions
@@ -318,8 +317,8 @@ end subroutine update_icebergs
 
 !~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~!
 !> SIS_dynamics_trans makes the calls to do ice dynamics and mass and tracer transport
-subroutine SIS_dynamics_trans(IST, OSS, FIA, IOF, dt_slow, CS, icebergs_CS, G, US, IG, tracer_CSp, OBC, &
-                              first_call, second_call, IOBbt)
+subroutine SIS_dynamics_trans(IST, OSS, FIA, IOF, dt_slow, CS, icebergs_CS, G, US, IG, tracer_CSp, OBC)
+!                              first_call, second_call, IOBbt)
   type(ice_state_type),       intent(inout) :: IST !< A type describing the state of the sea ice
   type(ocean_sfc_state_type), intent(in)    :: OSS !< A structure containing the arrays that describe
                                                    !! the ocean's surface state for the ice model.
@@ -338,8 +337,6 @@ subroutine SIS_dynamics_trans(IST, OSS, FIA, IOF, dt_slow, CS, icebergs_CS, G, U
   type(ice_OBC_type),         pointer       :: OBC  !< Open boundary structure.
   logical,         optional, intent(in)    :: first_call
   logical,         optional, intent(in)    :: second_call
-  type(ice_ocean_boundary_BT_type), &
-                                 optional, intent(inout) :: IOBbt !! type containing the variables needed to do the EVP TJM
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G))   :: &
