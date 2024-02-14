@@ -2494,11 +2494,6 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
       endif
     endif
 
-    ! initalize IOBbt type for embedded coupling.
-    ! if something
-        call embedded_init(Ice, IOBbt)
-    ! endif
-
     ! Do any error checking here.
     if (Ice%sCS%debug) call ice_grid_chksum(sG, US, haloshift=1)
 

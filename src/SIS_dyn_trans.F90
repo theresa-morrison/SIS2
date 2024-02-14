@@ -41,7 +41,7 @@ use SIS_diag_mediator, only : query_SIS_averaging_enabled, SIS_diag_ctrl
 use SIS_diag_mediator, only : register_diag_field=>register_SIS_diag_field
 use SIS_dyn_bgrid,     only : SIS_B_dyn_CS, SIS_B_dynamics, SIS_B_dyn_init
 use SIS_dyn_bgrid,     only : SIS_B_dyn_register_restarts, SIS_B_dyn_end
-use SIS_dyn_cgrid,     only : SIS_C_dyn_CS, SIS_C_dynamics, SIS_C_dyn_init
+use SIS_dyn_cgrid,     only : SIS_C_dynamics, SIS_C_dyn_init
 use SIS_dyn_cgrid,     only : SIS_C_dyn_register_restarts, SIS_C_dyn_end
 use SIS_dyn_cgrid,     only : SIS_C_dyn_read_alt_restarts, basal_stress_coeff_C
 use SIS_dyn_cgrid,     only : basal_stress_coeff_itd
@@ -65,6 +65,7 @@ use SIS2_ice_thm,      only : get_SIS2_thermo_coefs
 use slab_ice,          only : slab_ice_advect, slab_ice_dynamics
 use ice_bergs,         only : icebergs, icebergs_run, icebergs_init, icebergs_end
 use ice_grid,          only : ice_grid_type
+use MOM_SIS_C_dyn_CS_type, only : SIS_C_dyn_CS
 
 implicit none ; private
 
@@ -76,8 +77,11 @@ public :: SIS_dyn_trans_register_restarts, SIS_dyn_trans_init, SIS_dyn_trans_end
 public :: SIS_dyn_trans_read_alt_restarts, stresses_to_stress_mag
 public :: SIS_dyn_trans_transport_CS, SIS_dyn_trans_sum_output_CS
 
+public :: convert_IST_to_simple_state, increase_max_tracer_step_memory 
+public :: set_wind_stresses_C
+
 !> The control structure for the SIS_dyn_trans module
-type :: dyn_trans_CS ;  private
+type :: dyn_trans_CS ;   !private
   logical :: Cgrid_dyn    !< If true use a C-grid discretization of the sea-ice dynamics.
   real    :: dt_ice_dyn   !< The time step used for the slow ice dynamics, including
                           !! stepping the continuity equation and interactions
@@ -153,7 +157,7 @@ type :: dyn_trans_CS ;  private
 end type dyn_trans_CS
 
 !> A simplified 2-d description of the ice state integrated across thickness categories and layers.
-type, public :: dyn_state_2d ; private
+type, public :: dyn_state_2d ;  !private
   integer :: max_nts      !< The maximum number of transport steps that can be stored
                           !! before they are carried out.
   integer :: nts = 0      !< The number of accumulated transport steps since the last update.
@@ -335,8 +339,8 @@ subroutine SIS_dynamics_trans(IST, OSS, FIA, IOF, dt_slow, CS, icebergs_CS, G, U
   type(SIS_tracer_flow_control_CS), pointer :: tracer_CSp !< The structure for controlling calls to
                                                    !! auxiliary ice tracer packages
   type(ice_OBC_type),         pointer       :: OBC  !< Open boundary structure.
-  logical,         optional, intent(in)    :: first_call
-  logical,         optional, intent(in)    :: second_call
+  !logical,         optional, intent(in)    :: first_call
+  !logical,         optional, intent(in)    :: second_call
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G))   :: &

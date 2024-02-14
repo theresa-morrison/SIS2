@@ -31,11 +31,11 @@ use ice_boundary_types, only : ocean_ice_boundary_type
 
 use MOM_forcing_type,  only : SIS_C_EVP_state
 use SIS_dyn_evp,       only : setup_SIS_dynamics 
-
+use SIS_types,         only : translate_OSS_to_sOSS
 implicit none ; private
 
 public :: update_slow_ice_and_ocean, ice_ocean_driver_init, ice_ocean_driver_end
-public :: direct_copy_to_EVPT, direct_copy_from_EVPT
+!public :: direct_copy_to_EVPT, direct_copy_from_EVPT
 
 
 !> The control structure for the combined ice-ocean driver
@@ -277,11 +277,16 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
 
       call setup_SIS_dynamics(Ice, EVPT, time_step=dyn_time_step, cycle_length=dt_coupling)
 
-      call direct_flux_ice_to_IOB(time_start_step, Ice, IOB, do_EVP=.true., EVP_type=EVPT)
+      call direct_flux_ice_to_IOB(time_start_step, Ice, IOB, do_EVP=.true., EVPT=EVPT)
       
       call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_step, dyn_time_step, &
                               update_dyn=.true., update_thermo=.false., &
                               start_cycle=.false., end_cycle=(ns==nstep), cycle_length=dt_coupling)
+
+      ! need to finish SIS, may need to Ocn%forces%EVPT should have the updated info needed to complete
+      ! SIS dynamics
+      ! call finish_SIS_dynamics(Ice, EVPT, time_step=dyn_time_step, cycle_length=dt_coupling)
+      ! I will put this also into SIS_dyn_EVP
 
       time_start_step = time_start_step + dyn_time_step
     enddo
@@ -309,7 +314,7 @@ end subroutine update_slow_ice_and_ocean
 
 !> This subroutine does a direct copy of the fluxes from the ice data type into
 !! a ice-ocean boundary type on the same grid.
-subroutine direct_flux_ice_to_IOB(Time, Ice, IOB, do_thermo, do_evp, EVP_type)
+subroutine direct_flux_ice_to_IOB(Time, Ice, IOB, do_thermo, do_evp, EVPT)
   type(time_type),    intent(in)    :: Time !< Current time
   type(ice_data_type),intent(in)    :: Ice  !< A derived data type to specify ice boundary data
   type(ice_ocean_boundary_type), &
@@ -318,7 +323,7 @@ subroutine direct_flux_ice_to_IOB(Time, Ice, IOB, do_thermo, do_evp, EVP_type)
   logical,  optional, intent(in)    :: do_thermo !< If present and false, do not update the
                                             !! thermodynamic or tracer fluxes.
   logical,  optional, intent(in)    :: do_evp !< If present and false, do not update the
-  type(SIS_C_EVP_state) :: EVPT
+  type(SIS_C_EVP_state), optional, intent(in) :: EVPT
 
   integer :: i, j, is, ie, js, je, i_off, j_off, n, m
   logical :: used, do_therm, do_evpt
@@ -326,10 +331,11 @@ subroutine direct_flux_ice_to_IOB(Time, Ice, IOB, do_thermo, do_evp, EVP_type)
   call cpu_clock_begin(fluxIceOceanClock)
 
   do_therm = .true. ; if (present(do_thermo)) do_therm = do_thermo
-  do_evpt = .false. ; if (present(do_evpt)) do_evpt = do_evp
+  do_evpt = .false. ; if (present(do_evp)) do_evpt = do_evp
 
   if (do_evpt) then
-    if (ASSOCIATED(IOB%EVPT)) IOB%EVPT = EVP_type
+    !if (ASSOCIATED(IOB%EVP_type)) IOB%EVP_type = EVPT
+    IOB%EVP_type = EVPT
   endif
 
   ! Do a direct copy of the ice surface fluxes into the Ice-ocean-boundary type.
