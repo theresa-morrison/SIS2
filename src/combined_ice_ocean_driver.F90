@@ -30,7 +30,7 @@ use ocean_model_mod,    only : ocean_public_type, ocean_state_type, ice_ocean_bo
 use ice_boundary_types, only : ocean_ice_boundary_type 
 
 use MOM_forcing_type,  only : SIS_C_EVP_state
-use SIS_dyn_evp,       only : setup_SIS_dynamics 
+use SIS_dyn_setup,     only : setup_SIS_dynamics 
 use SIS_types,         only : translate_OSS_to_sOSS
 implicit none ; private
 
@@ -286,7 +286,7 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
       ! need to finish SIS, may need to Ocn%forces%EVPT should have the updated info needed to complete
       ! SIS dynamics
       ! call finish_SIS_dynamics(Ice, EVPT, time_step=dyn_time_step, cycle_length=dt_coupling)
-      ! I will put this also into SIS_dyn_EVP
+      ! I will put this also into SIS_dyn_setup
 
       time_start_step = time_start_step + dyn_time_step
     enddo
