@@ -1155,7 +1155,7 @@ end subroutine direct_copy_to_EVPT
 
 !=======================================================================
 
-  ! convert EVPT to sis state
+! convert EVPT to sis state
 subroutine  direct_copy_from_updated_EVPT(EVPT, CS, dt_slow, G, ci, ui, vi, mice,  &
                         fxat, fyat, pres_mice, diag_val, del_sh_min_pr, &
                         ui_min_trunc, ui_max_trunc, vi_min_trunc, vi_max_trunc, &
@@ -1177,25 +1177,26 @@ subroutine  direct_copy_from_updated_EVPT(EVPT, CS, dt_slow, G, ci, ui, vi, mice
   real, dimension(SZIB_(G),SZJ_(G)),  intent(out  ) :: ui    !< Zonal ice velocity [L T-1 ~> m s-1]
   real, dimension(SZI_(G),SZJB_(G)),  intent(out  ) :: vi    !< Meridional ice velocity [L T-1 ~> m s-1]
   
-  real, dimension(SZIB_(G),SZJ_(G)),  intent(out  ) :: & 
-    fxat  !< Zonal air stress on ice [R Z L T-2 ~> Pa]
-    fxoc  !<
-    fxlf  !<
-    fxic  !<
-    fxic_d  
-    fxic_t  
-    fxic_s  
-  real, dimension(SZI_(G),SZJB_(G)),  intent(out  ) :: & 
-    fyat  !< Meridional air stress on ice [R Z L T-2 ~> Pa]
-    fyoc  !<
-    fylf  !<
-    fyic  !<
-    fyic_d  
-    fyic_t  
-    fyic_s  
-
   real, dimension(SZIB_(G),SZJ_(G)),  intent(out  ) :: Cor_u
   real, dimension(SZI_(G),SZJB_(G)),  intent(out  ) :: Cor_v
+  
+  real, dimension(SZIB_(G),SZJ_(G)),  intent(out  ) :: &
+    fxat,  & !< Zonal air stress on ice [R Z L T-2 ~> Pa]
+    fxoc,  & !<
+    fxlf,  & !<
+    fxic,  & !<
+    fxic_d, &
+    fxic_t, &
+    fxic_s
+  
+  real, dimension(SZI_(G),BSZJ_(G)),  intent(out  ) :: &
+    fyat,  & !< Meridional air stress on ice [R Z L T-2 ~> Pa]
+    fyoc,  & !<
+    fylf,  & !<
+    fyic,  & !<
+    fyic_d, &
+    fyic_t, &
+    fyic_s
   
   real, dimension(SZI_(G),SZJ_(G)),  intent(out  ) :: &
     pres_mice, & ! The ice internal pressure per unit column mass [L2 T-2 ~> N m kg-1].
