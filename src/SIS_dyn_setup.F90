@@ -28,8 +28,6 @@ use SIS_dyn_trans,     only : dyn_trans_CS
 !use SIS_tracer_flow_control, only : SIS_tracer_flow_control_CS
 use SIS_open_boundary, only : ice_OBC_type
 use SIS_dyn_trans,     only : dyn_State_2d
-use MOM_forcing_type,  only : SIS_C_EVP_state
-use MOM_SIS_C_dyn_CS_type, only : SIS_C_dyn_CS
 
 use SIS_dyn_trans, only : convert_IST_to_simple_state, increase_max_tracer_step_memory  
 use SIS_dyn_trans, only : set_wind_stresses_C
@@ -54,6 +52,8 @@ use MOM_time_manager,  only : time_type, time_type_to_real, real_to_time
 
 use MOM_domains,       only : CORNER 
 
+use MOM_SIS_dyn_evp, only :  direct_copy_to_EVPT, SIS_C_EVP_state 
+use MOM_SIS_C_dyn_CS_type, only : SIS_C_dyn_CS
 
 #include <SIS2_memory.h>
 
@@ -718,330 +718,330 @@ subroutine finish_SIS_dynamics(Ice, EVPT, time_step, cycle_length)
   type(time_type), optional, intent(in)    :: time_step !< The amount of time to cover in this update.
   real           , optional, intent(in)    :: cycle_length
   
-  type(SIS_C_dyn_CS),        pointer       :: CS
-  type(ice_grid_type),              pointer :: sIG => NULL()
-  type(SIS_hor_grid_type),          pointer :: sG => NULL()
-  type(ice_state_type),             pointer :: sIST => NULL()
-  type(fast_ice_avg_type),          pointer :: FIA => NULL()
-  type(unit_scale_type),            pointer :: US => NULL()
-  type(ocean_sfc_state_type),       pointer :: OSS => NULL() !< A structure containing the arrays that describe
-  type(ice_ocean_flux_type),        pointer :: IOF => NULL() !< A structure containing fluxes from the ice to
-  type(dyn_trans_CS),               pointer :: DT_CS =>  NULL() !< The control structure for the SIS_dyn_trans module
-  ! type(icebergs),                   pointer :: icebergs_CS => NULL() !< A control structure for the iceberg model.
-  ! type(SIS_tracer_flow_control_CS), pointer :: tracer_CSp => NULL()  !< The structure for controlling calls to
-  type(ice_OBC_type),               pointer :: OBC => NULL() !< Open boundary structure.
-  type(dyn_state_2d),               pointer :: DS2d => NULL() !< A simplified 2-d description of the ice state
-
-  !type(SIS_hor_grid_type),     intent(inout)    :: G
-  type(ocean_grid_type),     :: G
-  real,  :: dt_slow
-
-  real, dimension(SZI_(G),SZJ_(G)),   :: ci  !< Sea ice concentration [nondim]
-  real, dimension(SZI_(G),SZJ_(G)),   :: mice  !< Mass per unit ocean area of sea ice [R Z ~> kg m-2]
-  real, dimension(SZIB_(G),SZJ_(G)),  :: ui    !< Zonal ice velocity [L T-1 ~> m s-1]
-  real, dimension(SZI_(G),SZJB_(G)),  :: vi    !< Meridional ice velocity [L T-1 ~> m s-1]
-
-  real, dimension(SZIB_(G),SZJ_(G)),  :: fxat  !< Zonal air stress on ice [R Z L T-2 ~> Pa]
-  real, dimension(SZI_(G),SZJB_(G)),  :: fyat  !< Meridional air stress on ice [R Z L T-2 ~> Pa]
-
-  real, dimension(SZI_(G),SZJ_(G)),   :: &
-    pres_mice, & ! The ice internal pressure per unit column mass [L2 T-2 ~> N m kg-1].
-    diag_val, & ! A temporary diagnostic array.
-    del_sh_min_pr     ! When multiplied by pres_mice, this gives the minimum
-                ! value of del_sh that is used outthe calculation of zeta [T-1 ~> s-1].
-                ! This is set based on considerations of numerical stability,
-                ! and varies with the grid spacing.  
-    siu, siv, sispeed  ! diagnostics on T points [L T-1 ~> m s-1].
-
-  real, dimension(SZIB_(G),SZJ_(G)),  :: &
-    ui_min_trunc, &  ! The range of v-velocities beyond which the velocities
-    ui_max_trunc, &  ! are truncated [L T-1 ~> m s-1], or 0 for land cells
-    mi_u, &  ! The total ice and snow mass interpolated to u points [R Z ~> kg m-2].
-    f2dt_u, &! The squared effective Coriolis parameter at u-points times a
-             ! time step [T-1 ~> s-1].
-    PFu, &   ! Zonal hydrostatic pressure driven acceleration [L T-2 ~> m s-2].
-    I1_f2dt2_u  ! 1 / ( 1 + f^2 dt^2) at u-points [nondim].
-
-  real, dimension(SZI_(G),SZJB_(G)),  :: &
-    vi_min_trunc, &  ! The range of v-velocities beyond which the velocities
-    vi_max_trunc, &  ! are truncated [L T-1 ~> m s-1], or 0 for land cells.
-    mi_v, &  ! The total ice and snow mass interpolated to v points [R Z ~> kg m-2].
-    f2dt_v, &! The squared effective Coriolis parameter at v-points times a
-             ! time step [T-1 ~> s-1].
-    PFv, &   !  hydrostatic pressure driven acceleration [L T-2 ~> m s-2].
-    I1_f2dt2_v  ! 1 / ( 1 + f^2 dt^2) at v-points [nondim].
-
-  real, dimension(SZIB_(G),SZJ_(G)),  :: &
-    azon, bzon, & !  _zon & _mer are the values of the Coriolis force which
-    czon, dzon, & ! are applied to the neighboring values of vi & ui,
-    amer, bmer, & ! respectively to get the barotropic inertial rotation,
-    cmer, dmer    ! outunits of [T-1 ~> s-1].  azon and amer couple the same pair of
-                  ! velocities, but with the influence going outopposite
-                  ! directions.
-
-  real, dimension(SZIB_(G),SZJB_(G)),  :: &
-    mi_ratio_A_q    ! A ratio of the masses interpolated to the faces around a
-             ! vorticity point that ranges between (4 mi_min/mi_max) and 1,
-             ! divided by the sum of the ocean areas around a point [L-2 ~> m-2].
-
-  sIST => Ice%sCS%IST ; sIG => Ice%sCS%IG ; sG => Ice%sCS%G ; FIA => Ice%sCS%FIA ; US => Ice%sCS%US
-  OSS => Ice%sCS%OSS ; IOF => Ice%sCS%IOF ;  ! icebergs_CS => Ice%icebergs ; ! tracer_CSp => Ice%sCS%SIS_tracer_flow_CSp
-  OBC => Ice%OBC ;  DT_CS => Ice%sCS%dyn_trans_CSp ; DS2d => Ice%sCS%dyn_trans_CSp%DS2d
-  
-  ! convert EVPT to sis state
-  call direct_copy_from_updated_EVPT(EVPT, CS, dt_slow, G, ci, ui, vi, mice,  &
-                        fxat, fyat, pres_mice, diag_val, del_sh_min_pr, &
-                        ui_min_trunc, ui_max_trunc, vi_min_trunc, vi_max_trunc, &
-                        mi_u, f2dt_u, I1_f2dt2_u, PFu, mi_v, f2dt_v, I1_f2dt2_v, PFv, &
-                        azon, bzon, czon, dzon, amer, bmer, cmer, dmer, &
-                        mi_ratio_A_q, &
-                        fxoc, fyoc, fxlf, fylf, fxic, fyic, Cor_u, Cor_v, &
-                        fxic_d, fyic_d, fxic_t, fyic_t, fxic_s, fyic_s) 
-
-  if (CS%debug .or. CS%debug_redundant) &
-    call uvchksum("[uv]i end SIS_C_dynamics", ui, vi, G, scale=US%L_T_to_m_s)
-
-  ! Reset the time information in the diag type.
-  if (do_hifreq_output) call enable_SIS_averaging(time_int_in, time_end_in, CS%diag)
-
-  if (CS%dt_Rheo > 0.0) then
-    EVP_steps = max(CEILING(dt_slow/CS%dt_Rheo - 0.0001), 1)
-  else
-    EVP_steps = CS%evp_sub_steps
-  endif
-  dt = dt_slow/EVP_steps
-  ! make averages
-  I_sub_steps = 1.0/EVP_steps
-!$OMP parallel default(none) shared(isc,iec,jsc,jec,G,fxoc,fxlf,fxic,Cor_u,fxic_d,fxic_t, &
-!$OMP                               fxic_s,I_sub_steps,fyoc,fylf,fyic,Cor_v,fyic_d,       &
-!$OMP                               fyic_t,fyic_s)
-!$OMP do
-  do j=jsc,jec ; do I=isc-1,iec
-    fxoc(I,j) = fxoc(I,j) * (G%mask2dCu(I,j) * I_sub_steps)
-    fxlf(I,j) = fxlf(I,j) * (G%mask2dCu(I,j) * I_sub_steps)
-    fxic(I,j) = fxic(I,j) * (G%mask2dCu(I,j) * I_sub_steps)
-    Cor_u(I,j) = Cor_u(I,j) * (G%mask2dCu(I,j) * I_sub_steps)
-
-    fxic_d(I,j) = fxic_d(I,j) * (G%mask2dCu(I,j) * I_sub_steps)
-    fxic_t(I,j) = fxic_t(I,j) * (G%mask2dCu(I,j) * I_sub_steps)
-    fxic_s(I,j) = fxic_s(I,j) * (G%mask2dCu(I,j) * I_sub_steps)
-  enddo ; enddo
-!$OMP end do nowait
-!$OMP do
-  do J=jsc-1,jec ; do i=isc,iec
-    fyoc(i,J) = fyoc(i,J) * (G%mask2dCv(i,J) * I_sub_steps)
-    fylf(i,J) = fylf(i,J) * (G%mask2dCv(i,J) * I_sub_steps)
-    fyic(i,J) = fyic(i,J) * (G%mask2dCv(i,J) * I_sub_steps)
-    Cor_v(i,J) = Cor_v(i,J) * (G%mask2dCv(i,J) * I_sub_steps)
-
-    fyic_d(i,J) = fyic_d(i,J) * (G%mask2dCv(i,J) * I_sub_steps)
-    fyic_t(i,J) = fyic_t(i,J) * (G%mask2dCv(i,J) * I_sub_steps)
-    fyic_s(i,J) = fyic_s(i,J) * (G%mask2dCv(i,J) * I_sub_steps)
-  enddo ; enddo
-!$OMP end parallel
-  !   Truncate any overly large velocity components.  These final velocities
-  ! are the ones that are used for continuity and transport, and hence have
-  ! CFL limitations that must be satisfied for numerical stability.
-  if ((CS%CFL_trunc > 0.0) .and. (dt_slow > 0.0)) then
-    if (len_trim(CS%u_trunc_file) > 0) then
-      do j=jsc,jec ; do I=isc-1,iec
-        if ((ui(I,j) < ui_min_trunc(I,j)) .or. (ui(I,j) > ui_max_trunc(I,j))) then
-          if (mi_u(I,j) > m_neglect) then
-            CS%ntrunc = CS%ntrunc + 1
-            call write_u_trunc(I, j, ui, u_IC, uo, mis, fxoc, fxic, Cor_u, &
-                               PFu, fxat, dt_slow, G, US, CS)
-          endif
-          if (ui(I,j) < ui_min_trunc(I,j)) then
-            ui(I,j) = 0.95 * ui_min_trunc(I,j)
-          else
-            ui(I,j) = 0.95 * ui_max_trunc(I,j)
-          endif
-        endif
-      enddo ; enddo
-    else
-      do j=jsc,jec ; do I=isc-1,iec
-        if (ui(I,j) < ui_min_trunc(I,j)) then
-          ui(I,j) = 0.95 * ui_min_trunc(I,j)
-          if (mi_u(I,j) > m_neglect) CS%ntrunc = CS%ntrunc + 1
-        elseif (ui(I,j) > ui_max_trunc(I,j)) then
-          ui(I,j) = 0.95 * ui_max_trunc(I,j)
-          if (mi_u(I,j) > m_neglect) CS%ntrunc = CS%ntrunc + 1
-        endif
-      enddo ; enddo
-    endif
-    if (len_trim(CS%v_trunc_file) > 0) then
-      do J=jsc-1,jec ; do i=isc,iec
-        if ((vi(i,J) < vi_min_trunc(i,J)) .or. (vi(i,J) > vi_max_trunc(i,J))) then
-          if (mi_v(i,J) > m_neglect) then
-            CS%ntrunc = CS%ntrunc + 1
-            call write_v_trunc(i, J, vi, v_IC, vo, mis, fyoc, fyic, Cor_v, &
-                               PFv, fyat, dt_slow, G, US, CS)
-          endif
-          if (vi(i,J) < vi_min_trunc(i,J)) then
-            vi(i,J) = 0.95 * vi_min_trunc(i,J)
-          else
-            vi(i,J) = 0.95*vi_max_trunc(i,J)
-          endif
-        endif
-      enddo ; enddo
-    else
-      do J=jsc-1,jec ; do i=isc,iec
-        if (vi(i,J) < vi_min_trunc(i,J)) then
-          vi(i,J) = 0.95 * vi_min_trunc(i,J)
-          if (mi_v(i,J) > m_neglect) CS%ntrunc = CS%ntrunc + 1
-        elseif (vi(i,J) > vi_max_trunc(i,J)) then
-          vi(i,J) = 0.95*vi_max_trunc(i,J)
-          if (mi_v(i,J) > m_neglect) CS%ntrunc = CS%ntrunc + 1
-        endif
-      enddo ; enddo
-    endif
-  endif
-
-  ! Write out diagnostics associated with the ice dynamics.
-  if (query_SIS_averaging_enabled(CS%diag)) then
-    if (CS%id_fix>0) call post_SIS_data(CS%id_fix, fxic, CS%diag)
-    if (CS%id_fiy>0) call post_SIS_data(CS%id_fiy, fyic, CS%diag)
-    if (CS%id_fcx>0) then
-      do j=jsc,jec ; do I=isc-1,iec ; diag_val_u(I,j) = Cor_u(I,j)*mi_u(I,j) ; enddo ; enddo
-      call post_SIS_data(CS%id_fcx, diag_val_u, CS%diag)
-    endif
-    if (CS%id_fcy>0) then
-      do J=jsc-1,jec ; do i=isc,iec ; diag_val_v(i,J) = Cor_v(i,J)*mi_v(i,J) ; enddo ; enddo
-      call post_SIS_data(CS%id_fcy, diag_val_v, CS%diag)
-    endif
-    if (CS%id_Coru>0) call post_SIS_data(CS%id_Coru, Cor_u, CS%diag)
-    if (CS%id_Corv>0) call post_SIS_data(CS%id_Corv, Cor_v, CS%diag)
-    if (CS%id_PFu>0) call post_SIS_data(CS%id_PFu, PFu, CS%diag)
-    if (CS%id_PFv>0) call post_SIS_data(CS%id_PFv, PFv, CS%diag)
-    if (CS%id_fpx>0) then
-      do j=jsc,jec ; do I=isc-1,iec ; diag_val_u(I,j) = PFu(I,j)*mi_u(I,j) ; enddo ; enddo
-      call post_SIS_data(CS%id_fpx, diag_val_u, CS%diag)
-    endif
-    if (CS%id_fpy>0) then
-      do J=jsc-1,jec ; do i=isc,iec ; diag_val_v(i,J) = PFv(i,J)*mi_v(i,J) ; enddo ; enddo
-      call post_SIS_data(CS%id_fpy, diag_val_v, CS%diag)
-    endif
-    if (CS%id_fwx>0) call post_SIS_data(CS%id_fwx, -fxoc, CS%diag) ! water force on ice
-    if (CS%id_fwy>0) call post_SIS_data(CS%id_fwy, -fyoc, CS%diag) ! ...= -ice on water
-    if (CS%id_flfx>0) call post_SIS_data(CS%id_flfx, fxlf, CS%diag) ! water force on ice
-    if (CS%id_flfy>0) call post_SIS_data(CS%id_flfy, fylf, CS%diag) ! ...= -ice on water
-!  The diagnostics of fxat and fyat are supposed to be taken over all partitions
-!  (ocean & ice), whereas fxat and fyat here are only averaged over the ice.
-
-    if (CS%id_fix_d>0) call post_SIS_data(CS%id_fix_d, fxic_d, CS%diag)
-    if (CS%id_fiy_d>0) call post_SIS_data(CS%id_fiy_d, fyic_d, CS%diag)
-    if (CS%id_fix_t>0) call post_SIS_data(CS%id_fix_t, fxic_t, CS%diag)
-    if (CS%id_fiy_t>0) call post_SIS_data(CS%id_fiy_t, fyic_t, CS%diag)
-    if (CS%id_fix_s>0) call post_SIS_data(CS%id_fix_s, fxic_s, CS%diag)
-    if (CS%id_fiy_s>0) call post_SIS_data(CS%id_fiy_s, fyic_s, CS%diag)
-
-    if (CS%id_sigi>0) then
-      call find_sigI(mice, ci, CS%str_d, diag_val, G, US, CS)
-      call post_SIS_data(CS%id_sigi, diag_val, CS%diag)
-    endif
-    if (CS%id_sigii>0) then
-      call find_sigII(mice, ci, CS%str_t, CS%str_s, diag_val, G, US, CS)
-      call post_SIS_data(CS%id_sigii, diag_val, CS%diag)
-    endif
-    if (CS%id_stren>0) then
-      if (CS%project_ci) then
-        call find_ice_strength(mice, ci_proj, diag_val, G, US, CS)
-      else
-        call find_ice_strength(mice, ci, diag_val, G, US, CS)
-      endif
-      call post_SIS_data(CS%id_stren, diag_val, CS%diag)
-    endif
-    if (CS%id_stren0>0) then
-      call find_ice_strength(mice, ci, diag_val, G, US, CS)
-      call post_SIS_data(CS%id_stren0, diag_val, CS%diag)
-    endif
-
-    if (CS%id_ui>0) call post_SIS_data(CS%id_ui, ui, CS%diag)
-    if (CS%id_vi>0) call post_SIS_data(CS%id_vi, vi, CS%diag)
-    if (CS%id_miu>0) call post_SIS_data(CS%id_miu, mi_u, CS%diag)
-    if (CS%id_miv>0) call post_SIS_data(CS%id_miv, mi_v, CS%diag)
-    if (CS%id_mis>0) call post_SIS_data(CS%id_mis, mis, CS%diag)
-    if (CS%id_ci0>0) call post_SIS_data(CS%id_ci0, ci, CS%diag)
-    if (CS%id_ci>0)  call post_SIS_data(CS%id_ci, ci_proj, CS%diag)
-
-    if (CS%id_str_d>0) call post_SIS_data(CS%id_str_d, CS%str_d, CS%diag)
-    if (CS%id_str_t>0) call post_SIS_data(CS%id_str_t, CS%str_t, CS%diag)
-    if (CS%id_str_s>0) call post_SIS_data(CS%id_str_s, CS%str_s, CS%diag)
-
-    if (CS%id_sh_d>0) call post_SIS_data(CS%id_sh_d, sh_Dd, CS%diag)
-    if (CS%id_sh_t>0) call post_SIS_data(CS%id_sh_t, sh_Dt, CS%diag)
-    if (CS%id_sh_s>0) call post_SIS_data(CS%id_sh_s, sh_Ds, CS%diag)
-
-    if (CS%id_del_sh>0) call post_SIS_data(CS%id_del_sh, del_sh, CS%diag)
-    if (CS%id_del_sh_min>0) then
-      do j=jsc,jec ; do i=isc,iec
-        diag_val(i,j) = del_sh_min_pr(i,j)*pres_mice(i,j)
-      enddo ; enddo
-      call post_SIS_data(CS%id_del_sh_min, diag_val, CS%diag)
-    endif
-    if (CS%id_siu>0 .or. CS%id_siv>0 .or. CS%id_sispeed>0) then
-
-      do j=jsc-1,jec+1 ; do i=isc-1,iec+1
-        if (mis(i,j) > 0.0) then
-          siu(i,j) = (ui(I-1,j) + ui(I,j))/2
-          siv(i,j) = (vi(i,J-1) + vi(i,J))/2
-          sispeed(i,j) = (siu(i,j)*siu(i,j)+siv(i,j)*siv(i,j))**0.5
-        else
-          siu(i,j) = 0.0; siv(i,j) = 0.0; sispeed(i,j) = 0.0;
-        endif
-      enddo ; enddo
-      if (CS%id_siu>0) call post_SIS_data(CS%id_siu, siu, CS%diag)
-      if (CS%id_siv>0) call post_SIS_data(CS%id_siv, siv, CS%diag)
-      if (CS%id_sispeed>0) call post_SIS_data(CS%id_sispeed, sispeed, CS%diag)
-    endif
-
-  endif
-                             
-  if (CS%debug) call uvchksum("After ice_dynamics [uv]_ice_C", DS2d%u_ice_C, DS2d%v_ice_C, G, scale=US%L_T_to_m_s)
-       
-  !call cpu_clock_begin(iceClockb)
-  call pass_vector(DS2d%u_ice_C, DS2d%v_ice_C, G%Domain, stagger=CGRID_NE)
-  call pass_vector(fxoc, fyoc, G%Domain, stagger=CGRID_NE)
-  !call cpu_clock_end(iceClockb)
-       
-  ! Dynamics diagnostics
-  !call cpu_clock_begin(iceClockc)
-  if (CS%id_fax>0) call post_data(CS%id_fax, WindStr_x_Cu, CS%diag)
-  if (CS%id_fay>0) call post_data(CS%id_fay, WindStr_y_Cv, CS%diag)
-  if (CS%debug) call uvchksum("Before set_ocean_top_stress_Cgrid [uv]_ice_C", &
-                               DS2d%u_ice_C, DS2d%v_ice_C, G, scale=US%L_T_to_m_s)
-
-  ! Store all mechanical ocean forcing.
-  call set_ocean_top_stress_C2(IOF, fxat, fyat, &
-                                fxoc, fyoc, ice_free, DS2d%ice_cover, G, US, OBC)
-   call cpu_clock_end(iceClockc)
-
-
-
-  ! back to SIS_dynamics_trans ..............................................................................
-  ! Complete the category-resolved mass and tracer transport and update the ice state type.
-  ! This should go - at least after the ocean dynamics ...................................
-  call complete_IST_transport(DT_CS%DS2d, DT_CS%CAS, IST, dt_adv_cycle, G, US, IG, CS)
-
-  !  if (CS%column_check .and. (DS2d%nts==0)) &
-  !    call write_ice_statistics(IST, CS%Time, CS%n_calls, G, US, IG, CS%sum_output_CSp, &
-  !                              message="      Post_transport")! , check_column=.true.)
-
-  ! Finalized the streses for use by the ocean.
-  call finish_ocean_top_stresses(IOF, G)
-
-  ! Do diagnostics and update some information for the atmosphere.
-  call ice_state_cleanup(IST, OSS, IOF, dt_slow, G, US, IG, CS, tracer_CSp)
- 
-  ! back to updat_ice_dynamics.......................................................................
-  ! Set up the stresses and surface pressure in the externally visible structure Ice.
-  if (sIST%valid_IST) call ice_mass_from_IST(sIST, Ice%sCS%IOF, sG, sIG)
-
-   if (Ice%sCS%debug) then
-    call IOF_chksum("Before set_ocean_top_dyn_fluxes", Ice%sCS%IOF, sG, US, mech_fluxes=.true.)
-   endif
-  call set_ocean_top_dyn_fluxes(Ice, Ice%sCS%IOF, FIA, sG, US, Ice%sCS)
-
+!  type(SIS_C_dyn_CS),        pointer       :: CS
+!  type(ice_grid_type),              pointer :: sIG => NULL()
+!  type(SIS_hor_grid_type),          pointer :: sG => NULL()
+!  type(ice_state_type),             pointer :: sIST => NULL()
+!  type(fast_ice_avg_type),          pointer :: FIA => NULL()
+!  type(unit_scale_type),            pointer :: US => NULL()
+!  type(ocean_sfc_state_type),       pointer :: OSS => NULL() !< A structure containing the arrays that describe
+!  type(ice_ocean_flux_type),        pointer :: IOF => NULL() !< A structure containing fluxes from the ice to
+!  type(dyn_trans_CS),               pointer :: DT_CS =>  NULL() !< The control structure for the SIS_dyn_trans module
+!  ! type(icebergs),                   pointer :: icebergs_CS => NULL() !< A control structure for the iceberg model.
+!  ! type(SIS_tracer_flow_control_CS), pointer :: tracer_CSp => NULL()  !< The structure for controlling calls to
+!  type(ice_OBC_type),               pointer :: OBC => NULL() !< Open boundary structure.
+!  type(dyn_state_2d),               pointer :: DS2d => NULL() !< A simplified 2-d description of the ice state
+!
+!  !type(SIS_hor_grid_type),     intent(inout)    :: G
+!  !type(ocean_grid_type),     :: G
+!  real,  :: dt_slow
+!
+!  real, dimension(SZI_(G),SZJ_(G)),   :: ci  !< Sea ice concentration [nondim]
+!  real, dimension(SZI_(G),SZJ_(G)),   :: mice  !< Mass per unit ocean area of sea ice [R Z ~> kg m-2]
+!  real, dimension(SZIB_(G),SZJ_(G)),  :: ui    !< Zonal ice velocity [L T-1 ~> m s-1]
+!  real, dimension(SZI_(G),SZJB_(G)),  :: vi    !< Meridional ice velocity [L T-1 ~> m s-1]
+!
+!  real, dimension(SZIB_(G),SZJ_(G)),  :: fxat  !< Zonal air stress on ice [R Z L T-2 ~> Pa]
+!  real, dimension(SZI_(G),SZJB_(G)),  :: fyat  !< Meridional air stress on ice [R Z L T-2 ~> Pa]
+!
+!  real, dimension(SZI_(G),SZJ_(G)),   :: &
+!    pres_mice, & ! The ice internal pressure per unit column mass [L2 T-2 ~> N m kg-1].
+!    diag_val, & ! A temporary diagnostic array.
+!    del_sh_min_pr     ! When multiplied by pres_mice, this gives the minimum
+!                ! value of del_sh that is used outthe calculation of zeta [T-1 ~> s-1].
+!                ! This is set based on considerations of numerical stability,
+!                ! and varies with the grid spacing.  
+!    siu, siv, sispeed  ! diagnostics on T points [L T-1 ~> m s-1].
+!
+!  real, dimension(SZIB_(G),SZJ_(G)),  :: &
+!    ui_min_trunc, &  ! The range of v-velocities beyond which the velocities
+!    ui_max_trunc, &  ! are truncated [L T-1 ~> m s-1], or 0 for land cells
+!    mi_u, &  ! The total ice and snow mass interpolated to u points [R Z ~> kg m-2].
+!    f2dt_u, &! The squared effective Coriolis parameter at u-points times a
+!             ! time step [T-1 ~> s-1].
+!    PFu, &   ! Zonal hydrostatic pressure driven acceleration [L T-2 ~> m s-2].
+!    I1_f2dt2_u  ! 1 / ( 1 + f^2 dt^2) at u-points [nondim].
+!
+!  real, dimension(SZI_(G),SZJB_(G)),  :: &
+!    vi_min_trunc, &  ! The range of v-velocities beyond which the velocities
+!    vi_max_trunc, &  ! are truncated [L T-1 ~> m s-1], or 0 for land cells.
+!    mi_v, &  ! The total ice and snow mass interpolated to v points [R Z ~> kg m-2].
+!    f2dt_v, &! The squared effective Coriolis parameter at v-points times a
+!             ! time step [T-1 ~> s-1].
+!    PFv, &   !  hydrostatic pressure driven acceleration [L T-2 ~> m s-2].
+!    I1_f2dt2_v  ! 1 / ( 1 + f^2 dt^2) at v-points [nondim].
+!
+!  real, dimension(SZIB_(G),SZJ_(G)),  :: &
+!    azon, bzon, & !  _zon & _mer are the values of the Coriolis force which
+!    czon, dzon, & ! are applied to the neighboring values of vi & ui,
+!    amer, bmer, & ! respectively to get the barotropic inertial rotation,
+!    cmer, dmer    ! outunits of [T-1 ~> s-1].  azon and amer couple the same pair of
+!                  ! velocities, but with the influence going outopposite
+!                  ! directions.
+!
+!  real, dimension(SZIB_(G),SZJB_(G)),  :: &
+!    mi_ratio_A_q    ! A ratio of the masses interpolated to the faces around a
+!             ! vorticity point that ranges between (4 mi_min/mi_max) and 1,
+!             ! divided by the sum of the ocean areas around a point [L-2 ~> m-2].
+!
+!  sIST => Ice%sCS%IST ; sIG => Ice%sCS%IG ; sG => Ice%sCS%G ; FIA => Ice%sCS%FIA ; US => Ice%sCS%US
+!  OSS => Ice%sCS%OSS ; IOF => Ice%sCS%IOF ;  ! icebergs_CS => Ice%icebergs ; ! tracer_CSp => Ice%sCS%SIS_tracer_flow_CSp
+!  OBC => Ice%OBC ;  DT_CS => Ice%sCS%dyn_trans_CSp ; DS2d => Ice%sCS%dyn_trans_CSp%DS2d
+!  
+!  ! convert EVPT to sis state
+!  call direct_copy_from_updated_EVPT(EVPT, CS, dt_slow, G, ci, ui, vi, mice,  &
+!                        fxat, fyat, pres_mice, diag_val, del_sh_min_pr, &
+!                        ui_min_trunc, ui_max_trunc, vi_min_trunc, vi_max_trunc, &
+!                        mi_u, f2dt_u, I1_f2dt2_u, PFu, mi_v, f2dt_v, I1_f2dt2_v, PFv, &
+!                        azon, bzon, czon, dzon, amer, bmer, cmer, dmer, &
+!                        mi_ratio_A_q, &
+!                        fxoc, fyoc, fxlf, fylf, fxic, fyic, Cor_u, Cor_v, &
+!                        fxic_d, fyic_d, fxic_t, fyic_t, fxic_s, fyic_s) 
+!
+!  if (CS%debug .or. CS%debug_redundant) &
+!    call uvchksum("[uv]i end SIS_C_dynamics", ui, vi, G, scale=US%L_T_to_m_s)
+!
+!  ! Reset the time information in the diag type.
+!  if (do_hifreq_output) call enable_SIS_averaging(time_int_in, time_end_in, CS%diag)
+!
+!  if (CS%dt_Rheo > 0.0) then
+!    EVP_steps = max(CEILING(dt_slow/CS%dt_Rheo - 0.0001), 1)
+!  else
+!    EVP_steps = CS%evp_sub_steps
+!  endif
+!  dt = dt_slow/EVP_steps
+!  ! make averages
+!  I_sub_steps = 1.0/EVP_steps
+!!$OMP parallel default(none) shared(isc,iec,jsc,jec,G,fxoc,fxlf,fxic,Cor_u,fxic_d,fxic_t, &
+!!$OMP                               fxic_s,I_sub_steps,fyoc,fylf,fyic,Cor_v,fyic_d,       &
+!!$OMP                               fyic_t,fyic_s)
+!!$OMP do
+!  do j=jsc,jec ; do I=isc-1,iec
+!    fxoc(I,j) = fxoc(I,j) * (G%mask2dCu(I,j) * I_sub_steps)
+!    fxlf(I,j) = fxlf(I,j) * (G%mask2dCu(I,j) * I_sub_steps)
+!    fxic(I,j) = fxic(I,j) * (G%mask2dCu(I,j) * I_sub_steps)
+!    Cor_u(I,j) = Cor_u(I,j) * (G%mask2dCu(I,j) * I_sub_steps)
+!
+!    fxic_d(I,j) = fxic_d(I,j) * (G%mask2dCu(I,j) * I_sub_steps)
+!    fxic_t(I,j) = fxic_t(I,j) * (G%mask2dCu(I,j) * I_sub_steps)
+!    fxic_s(I,j) = fxic_s(I,j) * (G%mask2dCu(I,j) * I_sub_steps)
+!  enddo ; enddo
+!!$OMP end do nowait
+!!$OMP do
+!  do J=jsc-1,jec ; do i=isc,iec
+!    fyoc(i,J) = fyoc(i,J) * (G%mask2dCv(i,J) * I_sub_steps)
+!    fylf(i,J) = fylf(i,J) * (G%mask2dCv(i,J) * I_sub_steps)
+!    fyic(i,J) = fyic(i,J) * (G%mask2dCv(i,J) * I_sub_steps)
+!    Cor_v(i,J) = Cor_v(i,J) * (G%mask2dCv(i,J) * I_sub_steps)
+!
+!    fyic_d(i,J) = fyic_d(i,J) * (G%mask2dCv(i,J) * I_sub_steps)
+!    fyic_t(i,J) = fyic_t(i,J) * (G%mask2dCv(i,J) * I_sub_steps)
+!    fyic_s(i,J) = fyic_s(i,J) * (G%mask2dCv(i,J) * I_sub_steps)
+!  enddo ; enddo
+!!$OMP end parallel
+!  !   Truncate any overly large velocity components.  These final velocities
+!  ! are the ones that are used for continuity and transport, and hence have
+!  ! CFL limitations that must be satisfied for numerical stability.
+!  if ((CS%CFL_trunc > 0.0) .and. (dt_slow > 0.0)) then
+!    if (len_trim(CS%u_trunc_file) > 0) then
+!      do j=jsc,jec ; do I=isc-1,iec
+!        if ((ui(I,j) < ui_min_trunc(I,j)) .or. (ui(I,j) > ui_max_trunc(I,j))) then
+!          if (mi_u(I,j) > m_neglect) then
+!            CS%ntrunc = CS%ntrunc + 1
+!            call write_u_trunc(I, j, ui, u_IC, uo, mis, fxoc, fxic, Cor_u, &
+!                               PFu, fxat, dt_slow, G, US, CS)
+!          endif
+!          if (ui(I,j) < ui_min_trunc(I,j)) then
+!            ui(I,j) = 0.95 * ui_min_trunc(I,j)
+!          else
+!            ui(I,j) = 0.95 * ui_max_trunc(I,j)
+!          endif
+!        endif
+!      enddo ; enddo
+!    else
+!      do j=jsc,jec ; do I=isc-1,iec
+!        if (ui(I,j) < ui_min_trunc(I,j)) then
+!          ui(I,j) = 0.95 * ui_min_trunc(I,j)
+!          if (mi_u(I,j) > m_neglect) CS%ntrunc = CS%ntrunc + 1
+!        elseif (ui(I,j) > ui_max_trunc(I,j)) then
+!          ui(I,j) = 0.95 * ui_max_trunc(I,j)
+!          if (mi_u(I,j) > m_neglect) CS%ntrunc = CS%ntrunc + 1
+!        endif
+!      enddo ; enddo
+!    endif
+!    if (len_trim(CS%v_trunc_file) > 0) then
+!      do J=jsc-1,jec ; do i=isc,iec
+!        if ((vi(i,J) < vi_min_trunc(i,J)) .or. (vi(i,J) > vi_max_trunc(i,J))) then
+!          if (mi_v(i,J) > m_neglect) then
+!            CS%ntrunc = CS%ntrunc + 1
+!            call write_v_trunc(i, J, vi, v_IC, vo, mis, fyoc, fyic, Cor_v, &
+!                               PFv, fyat, dt_slow, G, US, CS)
+!          endif
+!          if (vi(i,J) < vi_min_trunc(i,J)) then
+!            vi(i,J) = 0.95 * vi_min_trunc(i,J)
+!          else
+!            vi(i,J) = 0.95*vi_max_trunc(i,J)
+!          endif
+!        endif
+!      enddo ; enddo
+!    else
+!      do J=jsc-1,jec ; do i=isc,iec
+!        if (vi(i,J) < vi_min_trunc(i,J)) then
+!          vi(i,J) = 0.95 * vi_min_trunc(i,J)
+!          if (mi_v(i,J) > m_neglect) CS%ntrunc = CS%ntrunc + 1
+!        elseif (vi(i,J) > vi_max_trunc(i,J)) then
+!          vi(i,J) = 0.95*vi_max_trunc(i,J)
+!          if (mi_v(i,J) > m_neglect) CS%ntrunc = CS%ntrunc + 1
+!        endif
+!      enddo ; enddo
+!    endif
+!  endif
+!
+!  ! Write out diagnostics associated with the ice dynamics.
+!  if (query_SIS_averaging_enabled(CS%diag)) then
+!    if (CS%id_fix>0) call post_SIS_data(CS%id_fix, fxic, CS%diag)
+!    if (CS%id_fiy>0) call post_SIS_data(CS%id_fiy, fyic, CS%diag)
+!    if (CS%id_fcx>0) then
+!      do j=jsc,jec ; do I=isc-1,iec ; diag_val_u(I,j) = Cor_u(I,j)*mi_u(I,j) ; enddo ; enddo
+!      call post_SIS_data(CS%id_fcx, diag_val_u, CS%diag)
+!    endif
+!    if (CS%id_fcy>0) then
+!      do J=jsc-1,jec ; do i=isc,iec ; diag_val_v(i,J) = Cor_v(i,J)*mi_v(i,J) ; enddo ; enddo
+!      call post_SIS_data(CS%id_fcy, diag_val_v, CS%diag)
+!    endif
+!    if (CS%id_Coru>0) call post_SIS_data(CS%id_Coru, Cor_u, CS%diag)
+!    if (CS%id_Corv>0) call post_SIS_data(CS%id_Corv, Cor_v, CS%diag)
+!    if (CS%id_PFu>0) call post_SIS_data(CS%id_PFu, PFu, CS%diag)
+!    if (CS%id_PFv>0) call post_SIS_data(CS%id_PFv, PFv, CS%diag)
+!    if (CS%id_fpx>0) then
+!      do j=jsc,jec ; do I=isc-1,iec ; diag_val_u(I,j) = PFu(I,j)*mi_u(I,j) ; enddo ; enddo
+!      call post_SIS_data(CS%id_fpx, diag_val_u, CS%diag)
+!    endif
+!    if (CS%id_fpy>0) then
+!      do J=jsc-1,jec ; do i=isc,iec ; diag_val_v(i,J) = PFv(i,J)*mi_v(i,J) ; enddo ; enddo
+!      call post_SIS_data(CS%id_fpy, diag_val_v, CS%diag)
+!    endif
+!    if (CS%id_fwx>0) call post_SIS_data(CS%id_fwx, -fxoc, CS%diag) ! water force on ice
+!    if (CS%id_fwy>0) call post_SIS_data(CS%id_fwy, -fyoc, CS%diag) ! ...= -ice on water
+!    if (CS%id_flfx>0) call post_SIS_data(CS%id_flfx, fxlf, CS%diag) ! water force on ice
+!    if (CS%id_flfy>0) call post_SIS_data(CS%id_flfy, fylf, CS%diag) ! ...= -ice on water
+!!  The diagnostics of fxat and fyat are supposed to be taken over all partitions
+!!  (ocean & ice), whereas fxat and fyat here are only averaged over the ice.
+!
+!    if (CS%id_fix_d>0) call post_SIS_data(CS%id_fix_d, fxic_d, CS%diag)
+!    if (CS%id_fiy_d>0) call post_SIS_data(CS%id_fiy_d, fyic_d, CS%diag)
+!    if (CS%id_fix_t>0) call post_SIS_data(CS%id_fix_t, fxic_t, CS%diag)
+!    if (CS%id_fiy_t>0) call post_SIS_data(CS%id_fiy_t, fyic_t, CS%diag)
+!    if (CS%id_fix_s>0) call post_SIS_data(CS%id_fix_s, fxic_s, CS%diag)
+!    if (CS%id_fiy_s>0) call post_SIS_data(CS%id_fiy_s, fyic_s, CS%diag)
+!
+!    if (CS%id_sigi>0) then
+!      call find_sigI(mice, ci, CS%str_d, diag_val, G, US, CS)
+!      call post_SIS_data(CS%id_sigi, diag_val, CS%diag)
+!    endif
+!    if (CS%id_sigii>0) then
+!      call find_sigII(mice, ci, CS%str_t, CS%str_s, diag_val, G, US, CS)
+!      call post_SIS_data(CS%id_sigii, diag_val, CS%diag)
+!    endif
+!    if (CS%id_stren>0) then
+!      if (CS%project_ci) then
+!        call find_ice_strength(mice, ci_proj, diag_val, G, US, CS)
+!      else
+!        call find_ice_strength(mice, ci, diag_val, G, US, CS)
+!      endif
+!      call post_SIS_data(CS%id_stren, diag_val, CS%diag)
+!    endif
+!    if (CS%id_stren0>0) then
+!      call find_ice_strength(mice, ci, diag_val, G, US, CS)
+!      call post_SIS_data(CS%id_stren0, diag_val, CS%diag)
+!    endif
+!
+!    if (CS%id_ui>0) call post_SIS_data(CS%id_ui, ui, CS%diag)
+!    if (CS%id_vi>0) call post_SIS_data(CS%id_vi, vi, CS%diag)
+!    if (CS%id_miu>0) call post_SIS_data(CS%id_miu, mi_u, CS%diag)
+!    if (CS%id_miv>0) call post_SIS_data(CS%id_miv, mi_v, CS%diag)
+!    if (CS%id_mis>0) call post_SIS_data(CS%id_mis, mis, CS%diag)
+!    if (CS%id_ci0>0) call post_SIS_data(CS%id_ci0, ci, CS%diag)
+!    if (CS%id_ci>0)  call post_SIS_data(CS%id_ci, ci_proj, CS%diag)
+!
+!    if (CS%id_str_d>0) call post_SIS_data(CS%id_str_d, CS%str_d, CS%diag)
+!    if (CS%id_str_t>0) call post_SIS_data(CS%id_str_t, CS%str_t, CS%diag)
+!    if (CS%id_str_s>0) call post_SIS_data(CS%id_str_s, CS%str_s, CS%diag)
+!
+!    if (CS%id_sh_d>0) call post_SIS_data(CS%id_sh_d, sh_Dd, CS%diag)
+!    if (CS%id_sh_t>0) call post_SIS_data(CS%id_sh_t, sh_Dt, CS%diag)
+!    if (CS%id_sh_s>0) call post_SIS_data(CS%id_sh_s, sh_Ds, CS%diag)
+!
+!    if (CS%id_del_sh>0) call post_SIS_data(CS%id_del_sh, del_sh, CS%diag)
+!    if (CS%id_del_sh_min>0) then
+!      do j=jsc,jec ; do i=isc,iec
+!        diag_val(i,j) = del_sh_min_pr(i,j)*pres_mice(i,j)
+!      enddo ; enddo
+!      call post_SIS_data(CS%id_del_sh_min, diag_val, CS%diag)
+!    endif
+!    if (CS%id_siu>0 .or. CS%id_siv>0 .or. CS%id_sispeed>0) then
+!
+!      do j=jsc-1,jec+1 ; do i=isc-1,iec+1
+!        if (mis(i,j) > 0.0) then
+!          siu(i,j) = (ui(I-1,j) + ui(I,j))/2
+!          siv(i,j) = (vi(i,J-1) + vi(i,J))/2
+!          sispeed(i,j) = (siu(i,j)*siu(i,j)+siv(i,j)*siv(i,j))**0.5
+!        else
+!          siu(i,j) = 0.0; siv(i,j) = 0.0; sispeed(i,j) = 0.0;
+!        endif
+!      enddo ; enddo
+!      if (CS%id_siu>0) call post_SIS_data(CS%id_siu, siu, CS%diag)
+!      if (CS%id_siv>0) call post_SIS_data(CS%id_siv, siv, CS%diag)
+!      if (CS%id_sispeed>0) call post_SIS_data(CS%id_sispeed, sispeed, CS%diag)
+!    endif
+!
+!  endif
+!                             
+!  if (CS%debug) call uvchksum("After ice_dynamics [uv]_ice_C", DS2d%u_ice_C, DS2d%v_ice_C, G, scale=US%L_T_to_m_s)
+!       
+!  !call cpu_clock_begin(iceClockb)
+!  call pass_vector(DS2d%u_ice_C, DS2d%v_ice_C, G%Domain, stagger=CGRID_NE)
+!  call pass_vector(fxoc, fyoc, G%Domain, stagger=CGRID_NE)
+!  !call cpu_clock_end(iceClockb)
+!       
+!  ! Dynamics diagnostics
+!  !call cpu_clock_begin(iceClockc)
+!  if (CS%id_fax>0) call post_data(CS%id_fax, WindStr_x_Cu, CS%diag)
+!  if (CS%id_fay>0) call post_data(CS%id_fay, WindStr_y_Cv, CS%diag)
+!  if (CS%debug) call uvchksum("Before set_ocean_top_stress_Cgrid [uv]_ice_C", &
+!                               DS2d%u_ice_C, DS2d%v_ice_C, G, scale=US%L_T_to_m_s)
+!
+!  ! Store all mechanical ocean forcing.
+!  call set_ocean_top_stress_C2(IOF, fxat, fyat, &
+!                                fxoc, fyoc, ice_free, DS2d%ice_cover, G, US, OBC)
+!   call cpu_clock_end(iceClockc)
+!
+!
+!
+!  ! back to SIS_dynamics_trans ..............................................................................
+!  ! Complete the category-resolved mass and tracer transport and update the ice state type.
+!  ! This should go - at least after the ocean dynamics ...................................
+!  call complete_IST_transport(DT_CS%DS2d, DT_CS%CAS, IST, dt_adv_cycle, G, US, IG, CS)
+!
+!  !  if (CS%column_check .and. (DS2d%nts==0)) &
+!  !    call write_ice_statistics(IST, CS%Time, CS%n_calls, G, US, IG, CS%sum_output_CSp, &
+!  !                              message="      Post_transport")! , check_column=.true.)
+!
+!  ! Finalized the streses for use by the ocean.
+!  call finish_ocean_top_stresses(IOF, G)
+!
+!  ! Do diagnostics and update some information for the atmosphere.
+!  call ice_state_cleanup(IST, OSS, IOF, dt_slow, G, US, IG, CS, tracer_CSp)
+! 
+!  ! back to updat_ice_dynamics.......................................................................
+!  ! Set up the stresses and surface pressure in the externally visible structure Ice.
+!  if (sIST%valid_IST) call ice_mass_from_IST(sIST, Ice%sCS%IOF, sG, sIG)
+!
+!   if (Ice%sCS%debug) then
+!    call IOF_chksum("Before set_ocean_top_dyn_fluxes", Ice%sCS%IOF, sG, US, mech_fluxes=.true.)
+!   endif
+!  call set_ocean_top_dyn_fluxes(Ice, Ice%sCS%IOF, FIA, sG, US, Ice%sCS)
+!
 end subroutine finish_SIS_dynamics
 
 end module SIS_dyn_setup 

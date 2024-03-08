@@ -29,7 +29,7 @@ use ocean_model_mod,    only : update_ocean_model, ocean_model_end
 use ocean_model_mod,    only : ocean_public_type, ocean_state_type, ice_ocean_boundary_type
 use ice_boundary_types, only : ocean_ice_boundary_type 
 
-use MOM_forcing_type,  only : SIS_C_EVP_state
+use MOM_SIS_dyn_evp,   only : SIS_C_EVP_state 
 use SIS_dyn_setup,     only : setup_SIS_dynamics 
 use SIS_types,         only : translate_OSS_to_sOSS
 implicit none ; private
