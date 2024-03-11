@@ -17,7 +17,7 @@ use ice_model_mod,      only : ice_data_type
 
 use SIS_types,         only : IST_chksum, IST_bounds_check
 use ice_grid,          only : ice_grid_type
-use SIS_hor_grid,      only : SIS_hor_grid_type 
+use MOM_SIS_hor_grid,  only : SIS_hor_grid_type 
 use SIS_types,         only : ice_state_type
 use SIS_types,         only : fast_ice_avg_type
 use MOM_unit_scaling,  only : unit_scale_type

@@ -35,7 +35,7 @@ use SIS_debugging,     only : check_redundant_B, check_redundant_C
 use SIS_restart,       only : register_restart_field, only_read_from_restarts, SIS_restart_CS
 use SIS_restart,       only : query_initialized=>query_inited
 use SIS_framework,     only : safe_alloc
-use SIS_hor_grid,      only : SIS_hor_grid_type
+use MOM_SIS_hor_grid,  only : SIS_hor_grid_type
 use SIS_types,         only : ice_state_type
 use SIS2_ice_thm,      only : get_SIS2_thermo_coefs
 

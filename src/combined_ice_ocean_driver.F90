@@ -335,7 +335,7 @@ subroutine direct_flux_ice_to_IOB(Time, Ice, IOB, do_thermo, do_evp, EVPT)
 
   if (do_evpt) then
     !if (ASSOCIATED(IOB%EVP_type)) IOB%EVP_type = EVPT
-    IOB%EVP_type = EVPT
+    IOB%EVPT = EVPT
   endif
 
   ! Do a direct copy of the ice surface fluxes into the Ice-ocean-boundary type.

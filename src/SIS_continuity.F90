@@ -20,7 +20,7 @@ use MOM_file_parser,   only : get_param, log_version, param_file_type
 use MOM_obsolete_params, only : obsolete_logical
 use MOM_unit_scaling,  only : unit_scale_type
 use SIS_diag_mediator, only : time_type, SIS_diag_ctrl
-use SIS_hor_grid,      only : SIS_hor_grid_type
+use MOM_SIS_hor_grid,  only : SIS_hor_grid_type
 
 implicit none ; private
 

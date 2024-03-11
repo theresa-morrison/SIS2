@@ -13,7 +13,7 @@ use MOM_file_parser,        only : get_param, log_param, log_version, param_file
 use MOM_safe_alloc,         only : safe_alloc_ptr, safe_alloc_alloc
 use MOM_string_functions,   only : lowercase, uppercase, slasher
 use MOM_time_manager,       only : time_type
-use SIS_hor_grid,           only : SIS_hor_grid_type
+use MOM_SIS_hor_grid,       only : SIS_hor_grid_type
 
 implicit none ; private
 

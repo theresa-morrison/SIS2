@@ -18,7 +18,7 @@ use iso_fortran_env,   only : int64
 use SIS_types,         only : ice_ocean_flux_type, fast_ice_avg_type
 use SIS_types,         only : ice_state_type 
 use ice_grid,          only : ice_grid_type
-use SIS_hor_grid,      only : SIS_hor_grid_type 
+use MOM_SIS_hor_grid,  only : SIS_hor_grid_type 
 use SIS_open_boundary, only : ice_OBC_type
 !use SIS_dyn_trans,     only : dyn_trans_CS
 

@@ -18,7 +18,7 @@ use SIS_framework,     only : domain2D, SIS_chksum, get_domain_extent, safe_allo
 use SIS_restart,       only : register_restart_field, save_restart, SIS_restart_CS, query_initialized
 use SIS_framework,     only : coupler_1d_bc_type, coupler_2d_bc_type, coupler_3d_bc_type
 use SIS_framework,     only : coupler_type_spawn, coupler_type_write_chksums
-use SIS_hor_grid,      only : SIS_hor_grid_type
+use MOM_SIS_hor_grid,  only : SIS_hor_grid_type
 use SIS_open_boundary, only : ice_OBC_type
 use SIS_types,         only : ice_state_type, fast_ice_avg_type
 use SIS2_ice_thm,      only : ice_thermo_type, energy_0degC, get_SIS2_thermo_coefs
