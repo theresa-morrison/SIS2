@@ -24,11 +24,17 @@ use MOM_time_manager,   only : operator(+), operator(-), operator(>)
 
 use ice_model_mod,      only : ice_data_type, ice_model_end
 use ice_model_mod,      only : update_ice_slow_thermo, update_ice_dynamics_trans
-use ice_model_mod,      only : unpack_ocn_ice_bdry
+use ice_model_mod,      only : unpack_ocn_ice_bdry 
 use ocean_model_mod,    only : update_ocean_model, ocean_model_end
 use ocean_model_mod,    only : ocean_public_type, ocean_state_type, ice_ocean_boundary_type
-use ocean_model_mod,    only: ocean_public_type_chksum, ice_ocn_bnd_type_chksum
+use ocean_model_mod,    only : ocean_public_type_chksum, ice_ocn_bnd_type_chksum
 use ice_boundary_types, only : ocean_ice_boundary_type
+use SIS_types,          only : translate_OSS_to_sOSS
+
+use SIS_diag_mediator, only : SIS_diag_ctrl
+use SIS_diag_mediator, only : post_SIS_data, post_data=>post_SIS_data
+use SIS_diag_mediator, only : query_SIS_averaging_enabled, enable_SIS_averaging
+use SIS_diag_mediator, only : register_diag_field=>register_SIS_diag_field
 
 implicit none ; private
 
@@ -41,6 +47,8 @@ type, public :: ice_ocean_driver_type ; private
                               !! step including both dynamics and thermodynamics.
                               !! If false, the two phases are advanced with
                               !! separate calls. The default is true.
+  logical :: dyn_MOM_first    !< If true, and single_MOM_call = true, then dynamics will be done
+                              !! first, else if false thermodynamics will be first.
   logical :: intersperse_ice_ocn !< If true, intersperse the ice and ocean thermodynamic and
                               !! dynamic updates.  This requires the update ocean (MOM6) interfaces
                               !! used with single_MOM_call=.false. The default is false.
@@ -49,6 +57,10 @@ type, public :: ice_ocean_driver_type ; private
   real :: dt_coupled_dyn      !< The time step for coupling the ice and ocean dynamics when
                               !! INTERSPERSE_ICE_OCEAN is true, or <0 to use the coupled timestep.
                               !! The default is -1.
+  integer :: id_ui_ciod = -1, id_vi_ciod = -1
+  integer :: id_uo_ciod = -1, id_vo_ciod = -1
+  integer :: id_fz_ciod = -1, id_mi_ciod = -1, id_sm_ciod = -1
+  logical :: init_ciod_diags = .true.
 end type ice_ocean_driver_type
 
 !>@{ CPU time clock IDs
@@ -119,6 +131,9 @@ subroutine ice_ocean_driver_init(CS, Time_init, Time_in)
                  "If true, advance the state of MOM with a single step "//&
                  "including both dynamics and thermodynamics.  If false, "//&
                  "the two phases are advanced with separate calls.", default=.true.)
+  call get_param(param_file, mdl, "DYN_MOM_FIRST", CS%dyn_MOM_first, &
+                 "If true, advance the state of MOM dynamics first. If false "//&
+                 "advance thermodynamics first.", default=.true.)
   call get_param(param_file, mdl, "INTERSPERSE_ICE_OCEAN", CS%intersperse_ice_ocn, &
                  "If true, intersperse the ice and ocean thermodynamic and "//&
                  "and dynamic updates.", default=.false.)
@@ -135,6 +150,27 @@ subroutine ice_ocean_driver_init(CS, Time_init, Time_in)
 
 !  call get_param(param_file, mdl, "TIMEUNIT", Time_unit, &
 !                 "The time unit for ENERGYSAVEDAYS.", units="s", default=86400.0)
+ 
+!  if (CS%intersperse_ice_ocn) then ! can only save these diags if interspersing it true 
+!    CS%id_ui_ciod = register_diag_field('ice_model', 'UI_ciod', diag%axesCu1, Time,     &
+!                    'ice velocity - x component - from within CIOD', 'm/s', missing_value=missing,        &
+!                    interp_method='none', conversion=US%L_T_to_m_s)
+!    CS%id_vi_ciod = register_diag_field('ice_model', 'VI_ciod', diag%axesCv1, Time,     &
+!                    'ice velocity - y component - from within CIOD', 'm/s', missing_value=missing,        &
+!                    interp_method='none', conversion=US%L_T_to_m_s)
+!    CS%id_uo_ciod = register_diag_field('ice_model', 'UO_ciod', diag%axesCu1, Time,     &
+!                    'ocean velocity - x component - from within CIOD', 'm/s', missing_value=missing,        &
+!                    interp_method='none', conversion=US%L_T_to_m_s)
+!    CS%id_vo_ciod = register_diag_field('ice_model', 'VO_ciod', diag%axesCv1, Time,     &
+!                    'ocean velocity - y component - from within CIOD', 'm/s', missing_value=missing,        &
+!                    interp_method='none', conversion=US%L_T_to_m_s)
+!    CS%id_fz_ciod = register_diag_field('ice_model', 'frazil_ciod', diag%axesT1, Time,     &
+!                    'frazil - from within CIOD', 'W/m^2', missing_value=missing,        &
+!                    interp_method='none', conversion=US%QRZ_T_to_W_m2)
+!    CS%id_mi_ciod = register_diag_field('ice_model', 'MI_ciod', diag%axesT1, Time,     &
+!                    'mass ice - from within CIOD', 'kg/m^2', missing_value=missing,        &
+!                    interp_method='none', conversion=US%RZ_to_kg_m2)
+!  endif
 
   call close_param_file(param_file, component="CIOD")
   CS%CS_is_initialized = .true.
@@ -169,6 +205,7 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
   ! Local variables
   type(time_type) :: time_start_step ! The start time within an iterative update cycle.
   real :: dt_coupling        ! The time step of the thermodynamic update calls [s].
+  real :: dt_hifreq 
   type(time_type) :: dyn_time_step   ! The length of the dynamic call update calls.
   integer :: ns, nstep
 
@@ -203,15 +240,37 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
   if (.not.same_domain(Ocean_sfc%domain, Ice%slow_Domain_NH)) &
     call MOM_error(FATAL, "update_slow_ice_and_ocean can only be used if the "//&
         "ocean and slow ice layouts and domain sizes are identical.")
+ 
+  if (CS%intersperse_ice_ocn .and. CS%init_ciod_diags) then ! can only save these diags if interspersing it true 
+    CS%id_ui_ciod = register_diag_field('ice_model', 'UI_ciod', Ice%sCS%diag%axesCu1, Ice%sCS%Time,     &
+                    'ice velocity - x component - from within CIOD', 'm/s',         &
+                    interp_method='none', conversion=Ice%sCS%US%L_T_to_m_s)
+    CS%id_vi_ciod = register_diag_field('ice_model', 'VI_ciod', Ice%sCS%diag%axesCv1, Ice%sCS%Time,     &
+                    'ice velocity - y component - from within CIOD', 'm/s',         &
+                    interp_method='none', conversion=Ice%sCS%US%L_T_to_m_s)
+    CS%id_uo_ciod = register_diag_field('ice_model', 'UO_ciod', Ice%sCS%diag%axesCu1, Ice%sCS%Time,     &
+                    'ocean velocity - x component - from within CIOD', 'm/s',         &
+                    interp_method='none', conversion=Ice%sCS%US%L_T_to_m_s)
+    CS%id_vo_ciod = register_diag_field('ice_model', 'VO_ciod', Ice%sCS%diag%axesCv1, Ice%sCS%Time,     &
+                    'ocean velocity - y component - from within CIOD', 'm/s',         &
+                    interp_method='none', conversion=Ice%sCS%US%L_T_to_m_s)
+    CS%id_fz_ciod = register_diag_field('ice_model', 'frazil_ciod', Ice%sCS%diag%axesT1, Ice%sCS%Time,     &
+                    'frazil - from within CIOD', 'W/m^2',         &
+                    interp_method='none', conversion=Ice%sCS%US%QRZ_T_to_W_m2)
+    CS%id_mi_ciod = register_diag_field('ice_model', 'MI_ciod', Ice%sCS%diag%axesT1, Ice%sCS%Time,     &
+                    'mass ice - from within CIOD', 'kg/m^2',        &
+                    interp_method='none', conversion=Ice%sCS%US%RZ_to_kg_m2)
+    CS%id_sm_ciod = register_diag_field('ice_model', 'SM_ciod', Ice%sCS%diag%axesT1, Ice%sCS%Time,     &
+                    'Stress Magnitude - from within CIOD', 'kg/m/s^2',        &
+                    interp_method='none', conversion=Ice%sCS%US%RZ_T_to_kg_m2s*Ice%sCS%US%L_T_to_m_s)
+    CS%init_ciod_diags = .false.
+  endif
 
   if (CS%intersperse_ice_ocn) then
-    if (.not.CS%use_intersperse_bug) &
-      call direct_flux_ocn_to_OIB(time_start_update, Ocean_sfc, OIB, Ice, do_thermo=.true.)
-
     ! First step the ice, then ocean thermodynamics.
     call update_ice_slow_thermo(Ice)
 
-    call direct_flux_ice_to_IOB(time_start_update, Ice,   IOB, do_thermo=.true.)
+    call direct_flux_ice_to_IOB(time_start_update, Ice, IOB, do_thermo=.true.)
 
     call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_update, coupling_time_step, &
                             update_dyn=.false., update_thermo=.true., &
@@ -223,22 +282,37 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
     if ((CS%dt_coupled_dyn > 0.0) .and. (CS%dt_coupled_dyn < dt_coupling))&
       nstep = max(CEILING(dt_coupling/CS%dt_coupled_dyn - 1e-6), 1)
     dyn_time_step = real_to_time_type(dt_coupling / real(nstep))
+    dt_hifreq = dt_coupling / real(nstep)
     time_start_step = time_start_update
     do ns=1,nstep
       if (ns==nstep) then ! Adjust the dyn_time_step to cover uneven fractions of a tick or second.
         dyn_time_step = coupling_time_step - (time_start_step - time_start_update)
       endif
 
+      if (.not.CS%use_intersperse_bug) &
+        call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.true.)
+
       call update_ice_dynamics_trans(Ice, time_step=dyn_time_step, &
                         start_cycle=(ns==1), end_cycle=(ns==nstep), cycle_length=dt_coupling)
+
+      ! save ice high-frequency diags
+      !                         real         time             ctrl
+      call enable_SIS_averaging(Ice%sCS%US%T_to_s*dt_hifreq, time_start_step+dyn_time_step, Ice%sCS%diag)
+      if (CS%id_ui_ciod>0) call post_data(CS%id_ui_ciod, Ice%flux_u, Ice%sCS%diag)
+      if (CS%id_vi_ciod>0) call post_data(CS%id_vi_ciod, Ice%flux_v, Ice%sCS%diag)
+      if (CS%id_mi_ciod>0) call post_data(CS%id_mi_ciod, Ice%mi    , Ice%sCS%diag)
+      if (CS%id_sm_ciod>0) call post_data(CS%id_sm_ciod, Ice%stress_mag, Ice%sCS%diag)
 
       call direct_flux_ice_to_IOB(time_start_step, Ice, IOB, do_thermo=.false.)
 
       call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_step, dyn_time_step, &
                               update_dyn=.true., update_thermo=.false., &
                               start_cycle=.false., end_cycle=(ns==nstep), cycle_length=dt_coupling)
-      if (.not.CS%use_intersperse_bug) &
-        call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.false.)
+
+      ! save ocean high-frequency diags
+      if (CS%id_uo_ciod>0) call post_data(CS%id_uo_ciod, Ocean_sfc%u_surf, Ice%sCS%diag)
+      if (CS%id_vo_ciod>0) call post_data(CS%id_vo_ciod, Ocean_sfc%v_surf, Ice%sCS%diag)
+      if (CS%id_fz_ciod>0) call post_data(CS%id_fz_ciod, Ocean_sfc%frazil, Ice%sCS%diag)
 
       time_start_step = time_start_step + dyn_time_step
     enddo
@@ -252,12 +326,21 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
     if (CS%single_MOM_call) then
       call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_update, coupling_time_step )
     else
-      call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_update, coupling_time_step, &
-                              update_dyn=.true., update_thermo=.false., &
-                              start_cycle=.true., end_cycle=.false., cycle_length=dt_coupling)
-      call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_update, coupling_time_step, &
-                              update_dyn=.false., update_thermo=.true., &
-                              start_cycle=.false., end_cycle=.true., cycle_length=dt_coupling)
+      if (CS%dyn_MOM_first) then
+        call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_update, coupling_time_step, &
+                                update_dyn=.true., update_thermo=.false., &
+                                start_cycle=.true., end_cycle=.false., cycle_length=dt_coupling)
+        call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_update, coupling_time_step, &
+                                update_dyn=.false., update_thermo=.true., &
+                                start_cycle=.false., end_cycle=.true., cycle_length=dt_coupling)
+      else
+        call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_update, coupling_time_step, &
+                                update_dyn=.false., update_thermo=.true., &
+                                start_cycle=.false., end_cycle=.true., cycle_length=dt_coupling)
+        call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_update, coupling_time_step, &
+                                update_dyn=.true., update_thermo=.false., &
+                                start_cycle=.true., end_cycle=.false., cycle_length=dt_coupling)
+      endif
     endif
   endif
 
@@ -379,19 +462,19 @@ subroutine direct_flux_ocn_to_OIB(Time, Ocean, OIB, Ice, do_thermo)
   do_therm = .true. ; if (present(do_thermo)) do_therm = do_thermo
   do_area_weighted_flux = .false. !! Need to add option to account for area weighted fluxes
 
-  if (ASSOCIATED(OIB%u)) OIB%u = Ocean%u_surf
-  if (ASSOCIATED(OIB%v)) OIB%v = Ocean%v_surf
-  if (ASSOCIATED(OIB%sea_level)) OIB%sea_level = Ocean%sea_lev
+  if (ASSOCIATED(OIB%u)) OIB%u(:,:) = Ocean%u_surf(:,:)
+  if (ASSOCIATED(OIB%v)) OIB%v(:,:) = Ocean%v_surf(:,:)
+  if (ASSOCIATED(OIB%sea_level)) OIB%sea_level(:,:) = Ocean%sea_lev(:,:)
 
   if (do_therm) then
-   if (ASSOCIATED(OIB%t)) OIB%t = Ocean%t_surf
-   if (ASSOCIATED(OIB%s)) OIB%s = Ocean%s_surf
+   if (ASSOCIATED(OIB%t)) OIB%t(:,:) = Ocean%t_surf(:,:)
+   if (ASSOCIATED(OIB%s)) OIB%s(:,:) = Ocean%s_surf(:,:)
    if (ASSOCIATED(OIB%frazil)) then
 !   if(do_area_weighted_flux) then
 !     OIB%frazil = Ocean%frazil * Ocean%area
 !     call divide_by_area(OIB%frazil, Ice%area)
 !   else
-     OIB%frazil = Ocean%frazil
+     OIB%frazil(:,:) = Ocean%frazil(:,:)
 !   endif
    endif
   endif
@@ -415,6 +498,8 @@ subroutine direct_flux_ocn_to_OIB(Time, Ocean, OIB, Ice, do_thermo)
   !call unpack_ocn_ice_bdry
   call unpack_ocn_ice_bdry(OIB, Ice%sCS%OSS, Ice%sCS%IST%ITV, Ice%sCS%G, Ice%sCS%US, &
                                 Ice%sCS%specified_ice, Ice%ocean_fields)
+
+  call translate_OSS_to_sOSS(Ice%sCS%OSS, Ice%sCS%IST, Ice%sCS%sOSS, Ice%sCS%G, Ice%sCS%US)
 
 end subroutine direct_flux_ocn_to_OIB
 
