@@ -28,6 +28,8 @@ use SIS_tracer_registry, only : SIS_tracer_registry_type
 use SIS2_ice_thm,      only : ice_thermo_type, SIS2_ice_thm_CS, get_SIS2_thermo_coefs
 use SIS2_ice_thm,      only : enth_from_TS, temp_from_En_S
 
+use MOM_SIS_dyn_evp, only :  direct_copy_to_EVPT, SIS_C_EVP_state 
+
 implicit none ; private
 
 #include <SIS2_memory.h>
@@ -415,7 +417,10 @@ type ice_ocean_flux_type
 
   type (coupler_2d_bc_type) :: &
     tr_flux_ocn_top !< A structure of additional tracer fluxes at the top of the ocean
-
+  
+  type(SIS_C_EVP_state), pointer     :: EVP_CSp=> NULL()
+      !< Pointer to the control structure for the C-grid dynamics module
+  
   !>@{ diagnostic IDs for ice-to-ocean fluxes.
   integer :: id_saltf=-1
   ! The following are diagnostic IDs for iceberg-related fields.  These are only

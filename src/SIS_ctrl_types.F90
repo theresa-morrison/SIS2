@@ -132,7 +132,6 @@ type SIS_slow_CS
   type(SIS_tracer_flow_control_CS), pointer :: SIS_tracer_flow_CSp => NULL() !< A pointer
                             !! to the control structure that regulates the calls to
                             !! all of the sea ice tracer packages.
-
   type(ice_ocean_flux_type), pointer :: IOF => NULL()  !< A structure containing fluxes from
                             !! the ice to the ocean that are calculated by the ice model.
   type(ice_rad_type), pointer :: Rad => NULL()    !< A structure with fields related to
