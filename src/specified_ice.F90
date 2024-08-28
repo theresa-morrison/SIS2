@@ -18,7 +18,7 @@ use MOM_unit_scaling, only : unit_scale_type
 
 use SIS_diag_mediator, only : enable_SIS_averaging, disable_SIS_averaging
 use SIS_diag_mediator, only : query_SIS_averaging_enabled, SIS_diag_ctrl
-use SIS_hor_grid,  only : SIS_hor_grid_type
+use MOM_SIS_hor_grid,  only : SIS_hor_grid_type
 use SIS_ice_diags, only : ice_state_diags_type, register_ice_state_diagnostics
 use SIS_ice_diags, only : post_ice_state_diagnostics
 use SIS_sum_output, only : write_ice_statistics, SIS_sum_output_init, SIS_sum_out_CS

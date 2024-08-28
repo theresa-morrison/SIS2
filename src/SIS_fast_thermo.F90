@@ -30,7 +30,7 @@ use SIS_debugging,     only : hchksum
 use SIS_diag_mediator, only : SIS_diag_ctrl
 use SIS_framework,     only : coupler_3d_bc_type, coupler_type_spawn
 use SIS_framework,     only : coupler_type_increment_data, coupler_type_rescale_data
-use SIS_hor_grid,      only : SIS_hor_grid_type
+use MOM_SIS_hor_grid,  only : SIS_hor_grid_type
 use SIS_optics,        only : ice_optics_SIS2, bright_ice_temp, SIS_optics_CS
 use SIS_optics,        only : VIS_DIR, VIS_DIF, NIR_DIR, NIR_DIF
 use SIS_types,         only : ice_state_type, IST_chksum, IST_bounds_check, ice_rad_type

@@ -22,7 +22,7 @@ use MOM_domains, only : pass_vector, pass_var, pe_here
 use MOM_domains, only : BGRID_NE, AGRID, To_All, Scalar_Pair
 use MOM_error_handler, only : MOM_error, FATAL, WARNING, is_root_pe
 use MOM_file_parser, only : log_version, param_file_type, get_param
-use SIS_hor_grid, only : SIS_hor_grid_type
+use MOM_SIS_hor_grid, only : SIS_hor_grid_type
 use MOM_dyn_horgrid, only : dyn_horgrid_type
 use MOM_hor_index, only : hor_index_type
 

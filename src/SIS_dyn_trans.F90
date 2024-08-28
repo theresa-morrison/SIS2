@@ -41,13 +41,14 @@ use SIS_diag_mediator, only : query_SIS_averaging_enabled, SIS_diag_ctrl
 use SIS_diag_mediator, only : register_diag_field=>register_SIS_diag_field
 use SIS_dyn_bgrid,     only : SIS_B_dyn_CS, SIS_B_dynamics, SIS_B_dyn_init
 use SIS_dyn_bgrid,     only : SIS_B_dyn_register_restarts, SIS_B_dyn_end
-use SIS_dyn_cgrid,     only : SIS_C_dyn_CS, SIS_C_dynamics, SIS_C_dyn_init
+use MOM_SIS_C_dyn_CS_type, only : SIS_C_dyn_CS
+use SIS_dyn_cgrid,     only : SIS_C_dynamics, SIS_C_dyn_init
 use SIS_dyn_cgrid,     only : SIS_C_dyn_register_restarts, SIS_C_dyn_end
 use SIS_dyn_cgrid,     only : SIS_C_dyn_read_alt_restarts, basal_stress_coeff_C
 use SIS_dyn_cgrid,     only : basal_stress_coeff_itd
 use SIS_restart,       only : SIS_restart_CS
 use SIS_framework,     only : coupler_type_initialized, coupler_type_send_data, safe_alloc
-use SIS_hor_grid,      only : SIS_hor_grid_type
+use MOM_SIS_hor_grid,  only : SIS_hor_grid_type
 use SIS_ice_diags,     only : ice_state_diags_type, register_ice_state_diagnostics
 use SIS_ice_diags,     only : post_ocean_sfc_diagnostics, post_ice_state_diagnostics
 use SIS_open_boundary, only : ice_OBC_type, OBC_segment_type

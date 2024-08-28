@@ -80,7 +80,7 @@ use SIS_framework,     only : coupler_type_spawn, coupler_type_initialized
 use SIS_framework,     only : coupler_type_rescale_data, coupler_type_copy_data
 use SIS_fixed_initialization, only : SIS_initialize_fixed
 use SIS_get_input,     only : Get_SIS_input, directories
-use SIS_hor_grid,      only : SIS_hor_grid_type, set_hor_grid, SIS_hor_grid_end, set_first_direction
+use MOM_SIS_hor_grid,  only : SIS_hor_grid_type, set_hor_grid, SIS_hor_grid_end, set_first_direction
 use SIS_open_boundary, only : ice_OBC_type
 use SIS_optics,        only : ice_optics_SIS2, SIS_optics_init, SIS_optics_end, SIS_optics_CS
 use SIS_optics,        only : VIS_DIR, VIS_DIF, NIR_DIR, NIR_DIF

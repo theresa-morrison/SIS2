@@ -7,7 +7,7 @@ use MOM_domains, only : pass_var, pass_vector
 use MOM_domains, only : To_All, SCALAR_PAIR, CGRID_NE, AGRID, BGRID_NE, CORNER
 use MOM_dyn_horgrid, only : dyn_horgrid_type, set_derived_dyn_horgrid
 use MOM_error_handler, only : MOM_error, MOM_mesg, FATAL, WARNING
-use SIS_hor_grid, only : SIS_hor_grid_type, set_derived_SIS_metrics
+use MOM_SIS_hor_grid, only : SIS_hor_grid_type, set_derived_SIS_metrics
 
 implicit none ; private
 

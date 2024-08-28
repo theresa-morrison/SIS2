@@ -20,7 +20,7 @@ use MOM_string_functions, only : lowercase
 use MOM_time_manager,  only : time_type, time_type_to_real, real_to_time
 use MOM_time_manager,  only : get_date, set_date
 use ice_grid,          only : ice_grid_type
-use SIS_hor_grid,      only : SIS_hor_grid_type
+use MOM_SIS_hor_grid,      only : SIS_hor_grid_type
 use SIS_transcribe_grid, only : copy_SIS_horgrid_to_dyngrid
 
 implicit none ; private

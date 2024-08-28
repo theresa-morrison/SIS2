@@ -12,7 +12,7 @@ use MOM_unit_scaling,   only : unit_scale_type
 use SIS_diag_mediator,  only : post_SIS_data, SIS_diag_ctrl
 use SIS_debugging,      only : hchksum, Bchksum, uvchksum, hchksum_pair, Bchksum_pair
 use SIS_debugging,      only : check_redundant_B
-use SIS_hor_grid,       only : SIS_hor_grid_type
+use MOM_SIS_hor_grid,   only : SIS_hor_grid_type
 
 implicit none ; private
 

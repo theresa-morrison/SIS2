@@ -16,7 +16,7 @@ use SIS_continuity,    only : summed_continuity, proportionate_continuity
 use SIS_diag_mediator, only : post_SIS_data, query_SIS_averaging_enabled, SIS_diag_ctrl
 use SIS_diag_mediator, only : register_diag_field=>register_SIS_diag_field, time_type
 use SIS_framework,     only : safe_alloc
-use SIS_hor_grid,      only : SIS_hor_grid_type
+use MOM_SIS_hor_grid,  only : SIS_hor_grid_type
 use SIS_tracer_advect, only : advect_tracers_thicker, SIS_tracer_advect_CS
 use SIS_tracer_advect, only : advect_SIS_tracers, SIS_tracer_advect_init, SIS_tracer_advect_end
 use SIS_tracer_advect, only : advect_scalar

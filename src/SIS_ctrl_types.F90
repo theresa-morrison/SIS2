@@ -14,7 +14,7 @@ use SIS_dyn_trans,     only : dyn_trans_CS
 use SIS_fast_thermo,   only : fast_thermo_CS
 use SIS_framework,     only : domain2D, coupler_2d_bc_type, coupler_3d_bc_type
 use SIS_framework,     only : coupler_type_initialized, coupler_type_set_diags
-use SIS_hor_grid,      only : SIS_hor_grid_type
+use MOM_SIS_hor_grid,  only : SIS_hor_grid_type
 use SIS_optics,        only : SIS_optics_CS
 use SIS_slow_thermo,   only : slow_thermo_CS
 use SIS_sum_output,    only : SIS_sum_out_CS
