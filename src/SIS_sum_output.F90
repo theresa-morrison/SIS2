@@ -26,7 +26,7 @@ use MOM_time_manager,  only : get_date, get_calendar_type, NO_CALENDAR
 use MOM_unit_scaling,  only : unit_scale_type
 use SIS_types,         only : ice_state_type, ice_ocean_flux_type, fast_ice_avg_type
 use SIS_types,         only : ocean_sfc_state_type
-use SIS_hor_grid,      only : SIS_hor_grid_type
+use MOM_SIS_hor_grid,      only : SIS_hor_grid_type
 use ice_grid,          only : ice_grid_type
 use SIS2_ice_thm,      only : enthalpy_liquid_freeze, get_SIS2_thermo_coefs, ice_thermo_type
 use SIS_tracer_flow_control, only : SIS_tracer_flow_control_CS, SIS_call_tracer_stocks

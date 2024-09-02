@@ -15,7 +15,7 @@ use MOM_unit_scaling, only      : unit_scale_type
 use SIS_diag_mediator, only     : register_SIS_diag_field, safe_alloc_ptr
 use SIS_diag_mediator, only     : SIS_diag_ctrl, post_data=>post_SIS_data
 use SIS_restart, only           : register_restart_field, SIS_restart_CS
-use SIS_hor_grid, only          : SIS_hor_grid_type
+use MOM_SIS_hor_grid, only          : SIS_hor_grid_type
 use SIS_tracer_registry, only   : register_SIS_tracer, SIS_tracer_registry_type
 use SIS_utils, only             : post_avg
 use ice_grid, only              : ice_grid_type

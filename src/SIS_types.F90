@@ -23,7 +23,7 @@ use SIS_framework,     only : safe_alloc, safe_alloc_ptr
 use SIS_framework,     only : coupler_1d_bc_type, coupler_2d_bc_type, coupler_3d_bc_type
 use SIS_framework,     only : coupler_type_spawn, coupler_type_initialized
 use SIS_framework,     only : coupler_type_redistribute_data, coupler_type_copy_data
-use SIS_hor_grid,      only : SIS_hor_grid_type
+use MOM_SIS_hor_grid,      only : SIS_hor_grid_type
 use SIS_tracer_registry, only : SIS_tracer_registry_type
 use SIS2_ice_thm,      only : ice_thermo_type, SIS2_ice_thm_CS, get_SIS2_thermo_coefs
 use SIS2_ice_thm,      only : enth_from_TS, temp_from_En_S

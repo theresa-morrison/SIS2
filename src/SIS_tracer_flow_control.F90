@@ -50,7 +50,7 @@ use MOM_error_handler,   only : SIS_error=>MOM_error, FATAL, WARNING
 use MOM_file_parser,     only : get_param, log_version, param_file_type
 use SIS_diag_mediator,   only : time_type, SIS_diag_ctrl
 use SIS_restart,         only : SIS_restart_CS
-use SIS_hor_grid,        only : SIS_hor_grid_type
+use MOM_SIS_hor_grid,        only : SIS_hor_grid_type
 use SIS_tracer_registry, only : SIS_tracer_registry_type
 use SIS_tracer_registry, only : register_SIS_tracer, register_SIS_tracer_pair
 

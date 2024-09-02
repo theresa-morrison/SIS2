@@ -25,7 +25,7 @@ use SIS_restart,       only : restore_SIS_state, query_initialized=>query_inited
 use SIS_restart,       only : register_restart_field, only_read_from_restarts
 use SIS_get_input,     only : directories
 use SIS_types,         only : ice_state_type
-use SIS_hor_grid,      only : SIS_hor_grid_type, set_hor_grid, SIS_hor_grid_end
+use MOM_SIS_hor_grid,      only : SIS_hor_grid_type, set_hor_grid, SIS_hor_grid_end
 use SIS2_ice_thm,      only : get_SIS2_thermo_coefs, enth_from_TS, Temp_from_En_S, T_freeze, ice_thermo_type
 
 implicit none ; private

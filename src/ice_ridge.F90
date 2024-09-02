@@ -22,7 +22,7 @@ use MOM_domains,       only : pass_var, pass_vector, BGRID_NE
 use MOM_error_handler, only : SIS_error=>MOM_error, FATAL, WARNING, SIS_mesg=>MOM_mesg
 use MOM_file_parser,   only : get_param, log_param, read_param, log_version, param_file_type
 use MOM_unit_scaling,  only : unit_scale_type
-use SIS_hor_grid,      only : SIS_hor_grid_type
+use MOM_SIS_hor_grid,      only : SIS_hor_grid_type
 use SIS_types,         only : ice_state_type, ist_chksum
 use SIS_tracer_registry, only : SIS_tracer_registry_type, SIS_tracer_type, get_SIS_tracer_pointer
 use SIS2_ice_thm,      only : get_SIS2_thermo_coefs

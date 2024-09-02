@@ -41,6 +41,8 @@ use MOM_time_manager,  only : operator(+), operator(-)
 use MOM_time_manager,  only : operator(>), operator(*), operator(/), operator(/=)
 use MOM_unit_scaling,  only : unit_scale_type, unit_scaling_init, unit_scaling_end
 
+use MOM_SIS_dyn_types, only : SIS_dyn_state_2d
+
 use astronomy_mod, only : astronomy_init, astronomy_end
 use astronomy_mod, only : universal_time, orbital_time, diurnal_solar, daily_mean_solar
 use ocean_albedo_mod, only : compute_ocean_albedo            ! ice sets ocean surface
@@ -65,6 +67,7 @@ use SIS_diag_mediator, only : enable_SIS_averaging, disable_SIS_averaging
 use SIS_diag_mediator, only : post_SIS_data, post_data=>post_SIS_data
 use SIS_dyn_trans,     only : SIS_dynamics_trans, SIS_multi_dyn_trans, update_icebergs
 use SIS_dyn_trans,     only : slab_ice_dyn_trans
+use SIS_dyn_trans,     only : dyn_trans_CS
 use SIS_dyn_trans,     only : SIS_dyn_trans_register_restarts, SIS_dyn_trans_init, SIS_dyn_trans_end
 use SIS_dyn_trans,     only : SIS_dyn_trans_read_alt_restarts, stresses_to_stress_mag
 use SIS_dyn_trans,     only : SIS_dyn_trans_transport_CS, SIS_dyn_trans_sum_output_CS
@@ -80,7 +83,7 @@ use SIS_framework,     only : coupler_type_spawn, coupler_type_initialized
 use SIS_framework,     only : coupler_type_rescale_data, coupler_type_copy_data
 use SIS_fixed_initialization, only : SIS_initialize_fixed
 use SIS_get_input,     only : Get_SIS_input, directories
-use SIS_hor_grid,      only : SIS_hor_grid_type, set_hor_grid, SIS_hor_grid_end, set_first_direction
+use MOM_SIS_hor_grid,      only : SIS_hor_grid_type, set_hor_grid, SIS_hor_grid_end, set_first_direction
 use SIS_open_boundary, only : ice_OBC_type
 use SIS_optics,        only : ice_optics_SIS2, SIS_optics_init, SIS_optics_end, SIS_optics_CS
 use SIS_optics,        only : VIS_DIR, VIS_DIF, NIR_DIR, NIR_DIF
@@ -256,6 +259,38 @@ subroutine update_ice_slow_thermo(Ice)
   call cpu_clock_end(ice_clock_slow) ; call cpu_clock_end(iceClock)
 
 end subroutine update_ice_slow_thermo
+
+subroutine update_ice_merged_state(Ice, DS2d)
+  type(ice_data_type),       intent(inout) :: Ice !< The publicly visible ice data type.
+  type(SIS_dyn_state_2d),        intent(inout) :: DS2d
+
+  type(SIS_hor_grid_type), pointer :: G   !< The horizontal grid type
+  type(unit_scale_type), pointer   :: US    !< A structure with unit conversion factors
+  type(ice_grid_type), pointer     :: IG  !< The sea-ice specific grid type
+  type(dyn_trans_CS), pointer      :: CS  !< The control structure for the SIS_dyn_trans module
+  type(ice_state_type),    pointer :: IST 
+
+  IG => Ice%sCS%IG ; G => Ice%sCS%G ; US => Ice%sCS%US
+  CS => Ice%sCS%dyn_trans_CSp
+  IST => Ice%sCS%IST 
+
+  !if (.not.CS%merged_cont) call SIS_error(FATAL, &
+  !        "update_ice_merged_state should not be called unless MERGED_CONTINUITY=True.")
+
+  ! Convert the category-resolved ice state into the simplified 2-d ice state.
+  ! This should be called after a thermodynamic step or if ice_transport was called.
+  call convert_IST_to_simple_state(IST, CS%DS2d, CS%CAS, G, US, IG, CS)
+  DS2d = CS%DS2d
+
+  DS2d%FIA_2d%ice_cover = Ice%fCS%FIA%ice_cover
+  DS2d%FIA_2d%WindStr_x = Ice%fCS%FIA%WindStr_x
+  DS2d%FIA_2d%WindStr_y = Ice%fCS%FIA%WindStr_y
+  DS2d%FIA_2d%WindStr_ocn_x = Ice%fCS%FIA%WindStr_ocn_x
+  DS2d%FIA_2d%WindStr_ocn_y = Ice%fCS%FIA%WindStr_ocn_y
+
+  DS2d%SIS_C_dyn_CS = CS%SIS_C_dyn_CSp 
+
+end subroutine update_ice_merged_state
 
 !-----------------------------------------------------------------------
 !> Update the sea-ice state due to dynamics and ice transport.

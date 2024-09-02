@@ -44,7 +44,7 @@ use SIS_diag_mediator, only : register_diag_field=>register_SIS_diag_field
 use SIS_framework,     only : coupler_type_spawn, coupler_type_initialized
 use SIS_framework,     only : coupler_type_increment_data, coupler_type_rescale_data
 use SIS_framework,     only : coupler_type_send_data
-use SIS_hor_grid,      only : SIS_hor_grid_type
+use MOM_SIS_hor_grid,      only : SIS_hor_grid_type
 use SIS_optics,        only : VIS_DIR, VIS_DIF, NIR_DIR, NIR_DIF
 use SIS_sum_output,    only : SIS_sum_out_CS, write_ice_statistics! , SIS_sum_output_init
 use SIS_sum_output,    only : accumulate_bottom_input, accumulate_input_1, accumulate_input_2

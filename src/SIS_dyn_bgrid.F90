@@ -21,7 +21,7 @@ use SIS_debugging,     only : chksum, Bchksum, hchksum, check_redundant_B
 use SIS_debugging,     only : Bchksum_pair
 use SIS_restart,       only : register_restart_field, SIS_restart_CS
 use SIS_framework,     only : safe_alloc_ptr
-use SIS_hor_grid,      only : SIS_hor_grid_type
+use MOM_SIS_hor_grid,      only : SIS_hor_grid_type
 
 implicit none ; private
 
