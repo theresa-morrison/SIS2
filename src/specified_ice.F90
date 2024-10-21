@@ -24,7 +24,7 @@ use SIS_ice_diags, only : post_ice_state_diagnostics
 use SIS_sum_output, only : write_ice_statistics, SIS_sum_output_init, SIS_sum_out_CS
 use SIS_types,     only : ocean_sfc_state_type, ice_ocean_flux_type, fast_ice_avg_type
 use SIS_types,     only : ice_state_type, IST_chksum, IST_bounds_check
-use ice_grid,      only : ice_grid_type
+use MOM_ice_grid,      only : ice_grid_type
 
 implicit none ; private
 

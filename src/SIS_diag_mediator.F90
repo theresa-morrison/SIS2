@@ -3,7 +3,7 @@ module SIS_diag_mediator
 
 ! This file is a part of SIS2. See LICENSE.md for the license.
 
-use ice_grid,               only : ice_grid_type
+use MOM_ice_grid,               only : ice_grid_type
 use MOM_coms,               only : PE_here
 use MOM_diag_manager_infra, only : diag_manager_init=>MOM_diag_manager_init
 use MOM_diag_manager_infra, only : register_diag_field_infra, register_static_field_infra

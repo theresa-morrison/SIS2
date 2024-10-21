@@ -17,7 +17,7 @@ module SIS_fast_thermo
 !~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~!
 
 use ice_boundary_types, only : atmos_ice_boundary_type ! , land_ice_boundary_type
-use ice_grid,           only : ice_grid_type
+use MOM_ice_grid,           only : ice_grid_type
 
 use MOM_error_handler, only : SIS_error=>MOM_error, FATAL, WARNING, SIS_mesg=>MOM_mesg
 use MOM_error_handler, only : callTree_enter, callTree_leave, callTree_waypoint

@@ -18,7 +18,7 @@ use SIS_restart, only           : register_restart_field, SIS_restart_CS
 use MOM_SIS_hor_grid, only          : SIS_hor_grid_type
 use SIS_tracer_registry, only   : register_SIS_tracer, SIS_tracer_registry_type
 use SIS_utils, only             : post_avg
-use ice_grid, only              : ice_grid_type
+use MOM_ice_grid, only              : ice_grid_type
 
 implicit none ; private
 

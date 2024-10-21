@@ -10,9 +10,9 @@ use MOM_file_parser,   only : get_param, log_param, read_param, log_version, par
 use MOM_hor_index,     only : hor_index_type
 use MOM_obsolete_params, only : obsolete_logical, obsolete_real
 use MOM_unit_scaling,  only : unit_scale_type
-use SIS_continuity,    only : SIS_continuity_init, SIS_continuity_end
-use SIS_continuity,    only : continuity=>ice_continuity, SIS_continuity_CS
-use SIS_continuity,    only : summed_continuity, proportionate_continuity
+use MOM_SIS_continuity,    only : SIS_continuity_init, SIS_continuity_end
+use MOM_SIS_continuity,    only : continuity=>ice_continuity, SIS_continuity_CS
+use MOM_SIS_continuity,    only : summed_continuity, proportionate_continuity
 use SIS_diag_mediator, only : post_SIS_data, query_SIS_averaging_enabled, SIS_diag_ctrl
 use SIS_diag_mediator, only : register_diag_field=>register_SIS_diag_field, time_type
 use SIS_framework,     only : safe_alloc
@@ -24,7 +24,7 @@ use SIS_tracer_registry, only : SIS_tracer_registry_type, get_SIS_tracer_pointer
 use SIS_tracer_registry, only : update_SIS_tracer_halos, set_massless_SIS_tracers
 use SIS_tracer_registry, only : check_SIS_tracer_bounds
 use SIS_types,         only : ice_state_type
-use ice_grid,          only : ice_grid_type
+use MOM_ice_grid,          only : ice_grid_type
 use ice_ridging_mod,   only : ice_ridging_init, ice_ridging, ice_ridging_CS
 
 implicit none ; private

@@ -26,7 +26,7 @@ use MOM_SIS_hor_grid,      only : SIS_hor_grid_type
 use SIS_types,         only : ice_state_type, ist_chksum
 use SIS_tracer_registry, only : SIS_tracer_registry_type, SIS_tracer_type, get_SIS_tracer_pointer
 use SIS2_ice_thm,      only : get_SIS2_thermo_coefs
-use ice_grid,          only : ice_grid_type
+use MOM_ice_grid,          only : ice_grid_type
 !Icepack modules
 use icepack_kinds
 use icepack_itd, only: icepack_init_itd, cleanup_itd

@@ -2,7 +2,7 @@
 !! types, including allocation, deallocation, registration for restarts, and checksums.
 module SIS_ctrl_types
 
-use ice_grid,          only : ice_grid_type
+use MOM_ice_grid,          only : ice_grid_type
 use MOM_error_handler, only : SIS_error=>MOM_error, FATAL, WARNING, SIS_mesg=>MOM_mesg
 use MOM_file_parser,   only : param_file_type
 use MOM_hor_index,     only : hor_index_type

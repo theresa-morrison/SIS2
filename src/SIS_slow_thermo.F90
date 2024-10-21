@@ -22,7 +22,7 @@ module SIS_slow_thermo
 
 
 
-use ice_grid,          only : ice_grid_type
+use MOM_ice_grid,          only : ice_grid_type
 use ice_spec_mod,      only : get_sea_surface
 
 use MOM_cpu_clock,     only : cpu_clock_id, cpu_clock_begin, cpu_clock_end

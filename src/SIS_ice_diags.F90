@@ -29,7 +29,7 @@ use SIS_types,     only : ocean_sfc_state_type, ice_ocean_flux_type, fast_ice_av
 use SIS_types,     only : ice_state_type, IST_chksum, IST_bounds_check
 use SIS_utils,     only : get_avg, post_avg
 use SIS2_ice_thm,  only : get_SIS2_thermo_coefs, enthalpy_liquid_freeze, Temp_from_En_S
-use ice_grid,      only : ice_grid_type
+use MOM_ice_grid,      only : ice_grid_type
 
 implicit none ; private
 

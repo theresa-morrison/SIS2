@@ -26,7 +26,7 @@ use MOM_SIS_dyn_types, only : SIS_dyn_state_2d
 use ice_model_mod,      only : ice_data_type, ice_model_end
 use ice_model_mod,      only : update_ice_slow_thermo, update_ice_dynamics_trans
 use ice_model_mod,      only : unpack_ocn_ice_bdry 
-use ice_model_mod,      only : update_ice_merged_state 
+use ice_model_mod,      only : update_ice_merged_state, update_ice_advection 
 use ocean_model_mod,    only : update_ocean_model, ocean_model_end
 use ocean_model_mod,    only : ocean_public_type, ocean_state_type, ice_ocean_boundary_type
 use ocean_model_mod,    only : ocean_public_type_chksum, ice_ocn_bnd_type_chksum
@@ -54,6 +54,7 @@ type, public :: ice_ocean_driver_type ; private
   logical :: intersperse_ice_ocn !< If true, intersperse the ice and ocean thermodynamic and
                               !! dynamic updates.  This requires the update ocean (MOM6) interfaces
                               !! used with single_MOM_call=.false. The default is false.
+  logical :: dynmerge_ice_ocn !< If true, embedde the ice and ocean thermodynamic and
   logical :: embedded_ice_ocn !< If true, embedde the ice and ocean thermodynamic and
   logical :: use_intersperse_bug !< If true, use a bug in the intersperse option where the ocean
                               !! state was not being passed to the sea ice.
@@ -140,6 +141,9 @@ subroutine ice_ocean_driver_init(CS, Time_init, Time_in)
   call get_param(param_file, mdl, "INTERSPERSE_ICE_OCEAN", CS%intersperse_ice_ocn, &
                  "If true, intersperse the ice and ocean thermodynamic and "//&
                  "and dynamic updates.", default=.false.)
+  call get_param(param_file, mdl, "DYNMERGE_ICE_OCEAN", CS%dynmerge_ice_ocn, & 
+                 "If true, step merged seaice dynamics with the baroclinic ocean "//&
+                 "update.", default=.false.)
   call get_param(param_file, mdl, "EMBEDDED_ICE_OCEAN", CS%embedded_ice_ocn, & 
                  "If true, embed the ice EVP update within the ocean "//&
                  "barotropic update.", default=.false.)
@@ -295,7 +299,7 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
 
       time_start_step = time_start_step + dyn_time_step
     enddo
-  elseif (CS%embedded_ice_ocn) then
+  elseif (CS%dynmerge_ice_ocn) then
     ! First step the ice, then ocean thermodynamics.    
     call update_ice_slow_thermo(Ice)
     
@@ -317,23 +321,19 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
         dyn_time_step = coupling_time_step - (time_start_step - time_start_update)
       endif
 
-      call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.true.)
+      !call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.true.)
     
       ! create the updated merged sea ice state
       call update_ice_merged_state(Ice, IceDS2d)
-      call direct_flux_ice_to_IOB(time_start_step, Ice, IOB, do_embed=CS%embedded_ice_ocn, IceMerged=IceDS2d)
+      call direct_flux_ice_to_IOB(time_start_step, Ice, IOB, do_dynmer=.true., IceMerged=IceDS2d)
       
       call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_step, dyn_time_step, &
                               update_dyn=.true., update_thermo=.false., &
                               start_cycle=.false., end_cycle=(ns==nstep), cycle_length=dt_coupling)
 
       ! update sea ice dynamics after ocean
-      call update_ice_advection()
-
-      ! need to finish SIS, may need to Ocn%forces%EVPT should have the updated info needed to complete
-      ! SIS dynamics
-      ! call finish_SIS_dynamics(Ice, EVPT, time_step=dyn_time_step, cycle_length=dt_coupling)
-      ! I will put this also into SIS_dyn_setup
+      call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.true., do_dynmer=.true., IceMerged=IceDS2d)
+      call update_ice_advection(Ice, IceDS2d, dyn_time_step)
 
       time_start_step = time_start_step + dyn_time_step
     enddo
@@ -370,7 +370,7 @@ end subroutine update_slow_ice_and_ocean
 
 !> This subroutine does a direct copy of the fluxes from the ice data type into
 !! a ice-ocean boundary type on the same grid.
-subroutine direct_flux_ice_to_IOB(Time, Ice, IOB, do_thermo, do_embed, IceMerged)
+subroutine direct_flux_ice_to_IOB(Time, Ice, IOB, do_thermo, do_dynmer, IceMerged)
   type(time_type),    intent(in)    :: Time !< Current time
   type(ice_data_type),intent(in)    :: Ice  !< A derived data type to specify ice boundary data
   type(ice_ocean_boundary_type), &
@@ -378,18 +378,18 @@ subroutine direct_flux_ice_to_IOB(Time, Ice, IOB, do_thermo, do_embed, IceMerged
                                             !! and fluxes passed from ice to ocean
   logical,  optional, intent(in)    :: do_thermo !< If present and false, do not update the
                                             !! thermodynamic or tracer fluxes.
-  logical,  optional, intent(in)    :: do_embed
+  logical,  optional, intent(in)    :: do_dynmer
   type(SIS_dyn_state_2d),  optional, intent(in) :: IceMerged
 
   integer :: i, j, is, ie, js, je, i_off, j_off, n, m
-  logical :: used, do_therm, do_embedded
+  logical :: used, do_therm, do_dynmerge
 
   call cpu_clock_begin(fluxIceOceanClock)
 
   do_therm = .true. ; if (present(do_thermo)) do_therm = do_thermo
-  do_embedded = .false. ; if (present(do_embed)) do_embedded = do_embed
+  do_dynmerge= .false. ; if (present(do_dynmer)) do_dynmerge= do_dynmer
 
-  if (do_embedded) then
+  if (do_dynmerge) then
     !if (ASSOCIATED(IOB%EVP_type)) IOB%EVP_type = EVPT
     IOB%IceDS2d = IceMerged
   endif
@@ -474,7 +474,7 @@ end subroutine direct_flux_ice_to_IOB
 !! direct_flux_ice_to_IOB above. The thermodynamic varibles are also seperated so only
 !! the dynamics are updated.
 !! The data_override is similar to flux_ocean_to_ice_finish
-subroutine direct_flux_ocn_to_OIB(Time, Ocean, OIB, Ice, do_thermo)
+subroutine direct_flux_ocn_to_OIB(Time, Ocean, OIB, Ice, do_thermo, do_dynmer, IceMerged)
   type(time_type),    intent(in)     :: Time  !< Current time
   type(ocean_public_type),intent(in) :: Ocean !< A derived data type to specify ocean boundary data
   type(ocean_ice_boundary_type), intent(inout)   :: OIB !< A type containing ocean surface fields that
@@ -484,12 +484,21 @@ subroutine direct_flux_ocn_to_OIB(Time, Ocean, OIB, Ice, do_thermo)
   type(ice_data_type), &
     intent(inout) :: Ice            !< The publicly visible ice data type in the slow part
                                     !! of which the ocean surface information is to be stored.
-  logical :: used, do_therm, do_area_weighted_flux
+  logical,  optional, intent(in)    :: do_dynmer
+  type(SIS_dyn_state_2d),  optional, intent(inout) :: IceMerged
+
+  logical :: used, do_therm, do_area_weighted_flux, do_dynmerge
 
   call cpu_clock_begin(fluxOceanIceClock)
 
   do_therm = .true. ; if (present(do_thermo)) do_therm = do_thermo
   do_area_weighted_flux = .false. !! Need to add option to account for area weighted fluxes
+  do_dynmerge= .false. ; if (present(do_dynmer)) do_dynmerge= do_dynmer
+
+  if (do_dynmerge) then
+    !if (ASSOCIATED(IOB%EVP_type)) IOB%EVP_type = EVPT
+    IceMerged = Ocean%seaice
+  endif
 
   if (ASSOCIATED(OIB%u)) OIB%u(:,:) = Ocean%u_surf(:,:)
   if (ASSOCIATED(OIB%v)) OIB%v(:,:) = Ocean%v_surf(:,:)

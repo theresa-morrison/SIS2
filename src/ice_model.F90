@@ -42,6 +42,8 @@ use MOM_time_manager,  only : operator(>), operator(*), operator(/), operator(/=
 use MOM_unit_scaling,  only : unit_scale_type, unit_scaling_init, unit_scaling_end
 
 use MOM_SIS_dyn_types, only : SIS_dyn_state_2d
+use SIS_dyn_trans, only : convert_IST_to_simple_state
+use SIS_dyn_trans, only : complete_IST_transport, finish_ocean_top_stresses, ice_state_cleanup
 
 use astronomy_mod, only : astronomy_init, astronomy_end
 use astronomy_mod, only : universal_time, orbital_time, diurnal_solar, daily_mean_solar
@@ -52,7 +54,7 @@ use ice_bergs,          only : icebergs, icebergs_run, icebergs_init, icebergs_e
 use ice_boundary_types, only : ocean_ice_boundary_type, atmos_ice_boundary_type, land_ice_boundary_type
 use ice_boundary_types, only : ocn_ice_bnd_type_chksum, atm_ice_bnd_type_chksum
 use ice_boundary_types, only : lnd_ice_bnd_type_chksum
-use ice_grid,           only : set_ice_grid, ice_grid_end, ice_grid_type
+use MOM_ice_grid,           only : set_ice_grid, ice_grid_end, ice_grid_type
 use ice_spec_mod,       only : get_sea_surface
 use ice_type_mod,       only : ice_data_type, dealloc_ice_arrays
 use ice_type_mod,       only : ice_type_slow_reg_restarts, ice_type_fast_reg_restarts
@@ -134,6 +136,7 @@ public :: unpack_ocean_ice_boundary_calved_shelf_bergs
 public :: ice_model_fast_cleanup, unpack_land_ice_boundary
 public :: exchange_fast_to_slow_ice, update_ice_model_slow
 public :: update_ice_slow_thermo, update_ice_dynamics_trans
+public :: update_ice_merged_state, update_ice_advection
 
 !>@{ CPU time clock IDs
 integer :: iceClock
@@ -241,8 +244,8 @@ subroutine update_ice_slow_thermo(Ice)
     call FIA_chksum("Before slow_thermodynamics", FIA, sG, US)
     call IST_chksum("Before slow_thermodynamics", sIST, sG, US, sIG)
     call OSS_chksum("Before slow_thermodynamics", Ice%sCS%OSS, sG, US)
-    if (associated(Ice%sCS%XSF)) &
-      call TSF_chksum("Before slow_thermodynamics XSF", Ice%sCS%XSF, sG, US)
+    !if (associated(Ice%sCS%XSF)) &
+     !call TSF_chksum("Before slow_thermodynamics XSF", Ice%sCS%XSF, sG, US)
     ! call IOF_chksum("Before slow_thermodynamics", Ice%sCS%IOF, sG, US)
   endif
 
@@ -288,9 +291,45 @@ subroutine update_ice_merged_state(Ice, DS2d)
   DS2d%FIA_2d%WindStr_ocn_x = Ice%fCS%FIA%WindStr_ocn_x
   DS2d%FIA_2d%WindStr_ocn_y = Ice%fCS%FIA%WindStr_ocn_y
 
-  DS2d%SIS_C_dyn_CS = CS%SIS_C_dyn_CSp 
+  DS2d%SIS_C_dyn_CSp = CS%SIS_C_dyn_CSp 
+
+  ! 
+  DS2d%dynmer_trans_CSp%debug = CS%debug
+  DS2d%dynmer_trans_CSp%do_ridging = CS%do_ridging
+  DS2d%dynmer_trans_CSp%diag = CS%diag
+  DS2d%dynmer_trans_CSp%continuity_CSp = CS%continuity_CSp
+  DS2d%dynmer_trans_CSp%cover_trans_CSp = CS%cover_trans_CSp
 
 end subroutine update_ice_merged_state
+
+subroutine update_ice_advection(Ice, DS2d, time_step)
+  type(ice_data_type),    intent(inout) :: Ice !< The publicly visible ice data type.
+  type(SIS_dyn_state_2d), intent(inout) :: DS2d
+  type(time_type), intent(in)    :: time_step !< The amount of time to cover in this update.
+
+  real  :: dt_adv
+  type(SIS_hor_grid_type), pointer :: G   !< The horizontal grid type
+  type(unit_scale_type), pointer   :: US    !< A structure with unit conversion factors
+  type(ice_grid_type), pointer     :: IG  !< The sea-ice specific grid type
+  type(dyn_trans_CS), pointer      :: CS  !< The control structure for the SIS_dyn_trans module
+  type(ice_state_type),    pointer :: IST 
+
+  IG => Ice%sCS%IG ; G => Ice%sCS%G ; US => Ice%sCS%US
+  CS => Ice%sCS%dyn_trans_CSp
+  IST => Ice%sCS%IST 
+
+  dt_adv = US%s_to_T*time_type_to_real(time_step)
+
+  ! Complete the category-resolved mass and tracer transport and update the ice state type.
+  call complete_IST_transport(DS2d, CS%CAS, IST, dt_adv, G, US, IG, CS)
+
+  ! Finalized the streses for use by the ocean.
+  call finish_ocean_top_stresses(Ice%sCS%IOF, G)
+
+  ! Do diagnostics and update some information for the atmosphere.
+  call ice_state_cleanup(IST, Ice%sCS%OSS, Ice%sCS%IOF, dt_adv, G, US, IG, CS, Ice%sCS%SIS_tracer_flow_CSp)
+
+end subroutine update_ice_advection
 
 !-----------------------------------------------------------------------
 !> Update the sea-ice state due to dynamics and ice transport.

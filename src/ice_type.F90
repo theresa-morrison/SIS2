@@ -2,7 +2,7 @@
 module ice_type_mod
 
 use ice_bergs,         only : icebergs, icebergs_stock_pe, icebergs_save_restart
-use ice_grid,          only : ice_grid_type
+use MOM_ice_grid,          only : ice_grid_type
 use MOM_coms,          only : PE_here
 use MOM_domains,       only : CGRID_NE, BGRID_NE, AGRID
 use MOM_error_handler, only : SIS_error=>MOM_error, FATAL, WARNING, SIS_mesg=>MOM_mesg
