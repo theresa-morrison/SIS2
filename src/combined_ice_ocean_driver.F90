@@ -150,7 +150,7 @@ subroutine ice_ocean_driver_init(CS, Time_init, Time_in)
   call get_param(param_file, mdl, "DT_COUPLED_ICE_OCEAN_DYN", CS%dt_coupled_dyn, &
                  "The time step for coupling the ice and ocean dynamics when "//&
                  "INTERSPERSE_ICE_OCEAN is true, or <0 to use the coupled timestep.", &
-                 units="seconds", default=-1.0, do_not_log=.not.CS%intersperse_ice_ocn)
+                 units="seconds", default=-1.0) !, do_not_log=.not.CS%intersperse_ice_ocn)
   call get_param(param_file, mdl, "USE_INTERSPERSE_BUG", CS%use_intersperse_bug, &
                  "If true, use a bug in the intersperse option where the ocean state"//&
                  "was not being passed to the sea ice.", default=.true.)
@@ -224,7 +224,8 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
     call MOM_error(FATAL, "update_slow_ice_and_ocean can only be used if the "//&
         "ocean and slow ice layouts and domain sizes are identical.")
  
-  if (CS%intersperse_ice_ocn .and. CS%init_ciod_diags) then ! can only save these diags if interspersing it true 
+  !if (CS%intersperse_ice_ocn .and. CS%init_ciod_diags) then ! can only save these diags if interspersing it true 
+  if (CS%init_ciod_diags) then ! can only save these diags if interspersing it true 
     CS%id_ui_ciod = register_diag_field('ice_model', 'UI_ciod', Ice%sCS%diag%axesCu1, Ice%sCS%Time,     &
                     'ice velocity - x component - from within CIOD', 'm/s',         &
                     interp_method='none', conversion=Ice%sCS%US%L_T_to_m_s)
@@ -315,6 +316,7 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
     if ((CS%dt_coupled_dyn > 0.0) .and. (CS%dt_coupled_dyn < dt_coupling))&
       nstep = max(CEILING(dt_coupling/CS%dt_coupled_dyn - 1e-6), 1)
     dyn_time_step = real_to_time_type(dt_coupling / real(nstep))
+    dt_hifreq = dt_coupling / real(nstep)
     time_start_step = time_start_update
     do ns=1,nstep ! do multiple times, as with interspersed
       if (ns==nstep) then ! Adjust the dyn_time_step to cover uneven fractions of a tick or second.
@@ -331,8 +333,22 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
                               update_dyn=.true., update_thermo=.false., &
                               start_cycle=.false., end_cycle=(ns==nstep), cycle_length=dt_coupling)
 
+      ! save ocean high-frequency diags
+      if (CS%id_uo_ciod>0) call post_data(CS%id_uo_ciod, Ocean_sfc%u_surf, Ice%sCS%diag)
+      if (CS%id_vo_ciod>0) call post_data(CS%id_vo_ciod, Ocean_sfc%v_surf, Ice%sCS%diag)
+      if (CS%id_fz_ciod>0) call post_data(CS%id_fz_ciod, Ocean_sfc%frazil, Ice%sCS%diag)
+
       ! update sea ice dynamics after ocean
       call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.true., do_dynmer=.true., IceMerged=IceDS2d)
+
+      ! save ice high-frequency diags
+      !                         real         time             ctrl
+      call enable_SIS_averaging(Ice%sCS%US%T_to_s*dt_hifreq, time_start_step+dyn_time_step, Ice%sCS%diag)
+      if (CS%id_ui_ciod>0) call post_data(CS%id_ui_ciod, IceDS2d%u_ice_C, Ice%sCS%diag)
+      if (CS%id_vi_ciod>0) call post_data(CS%id_vi_ciod, IceDS2d%v_ice_C, Ice%sCS%diag)
+      if (CS%id_mi_ciod>0) call post_data(CS%id_mi_ciod, IceDS2d%mi_sum , Ice%sCS%diag)
+      ! if (CS%id_sm_ciod>0) call post_data(CS%id_sm_ciod, IceDS2d%stress_mag, Ice%sCS%diag)
+
       call update_ice_advection(Ice, IceDS2d, dyn_time_step)
 
       time_start_step = time_start_step + dyn_time_step
