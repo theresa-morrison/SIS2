@@ -302,6 +302,8 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
     enddo
   elseif (CS%dynmerge_ice_ocn) then
     ! First step the ice, then ocean thermodynamics.    
+    call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.true.)
+
     call update_ice_slow_thermo(Ice)
     
     call direct_flux_ice_to_IOB(time_start_update, Ice, IOB, do_thermo=.true.)
@@ -323,11 +325,11 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
         dyn_time_step = coupling_time_step - (time_start_step - time_start_update)
       endif
 
-      !call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.true.)
+      call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.true.)
     
       ! create the updated merged sea ice state
-      call update_ice_merged_state(Ice, IceDS2d)
-      call direct_flux_ice_to_IOB(time_start_step, Ice, IOB, do_dynmer=.true., IceMerged=IceDS2d)
+      call update_ice_merged_state(Ice, IceDS2d, Ice%sCS%G)
+      call direct_flux_ice_to_IOB(time_start_step, Ice, IOB, do_dynmer=.true., IceMerged=Ice%sCS%dyn_trans_CSp%DS2d)
       
       call update_ocean_model(IOB, Ocn, Ocean_sfc, time_start_step, dyn_time_step, &
                               update_dyn=.true., update_thermo=.false., &
@@ -339,7 +341,7 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
       if (CS%id_fz_ciod>0) call post_data(CS%id_fz_ciod, Ocean_sfc%frazil, Ice%sCS%diag)
 
       ! update sea ice dynamics after ocean
-      call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.true., do_dynmer=.true., IceMerged=IceDS2d)
+      call direct_flux_ocn_to_OIB(time_start_step, Ocean_sfc, OIB, Ice, do_thermo=.true., do_dynmer=.true.)
 
       ! save ice high-frequency diags
       !                         real         time             ctrl
@@ -349,7 +351,7 @@ subroutine update_slow_ice_and_ocean(CS, Ice, Ocn, Ocean_sfc, IOB, &
       if (CS%id_mi_ciod>0) call post_data(CS%id_mi_ciod, IceDS2d%mi_sum , Ice%sCS%diag)
       ! if (CS%id_sm_ciod>0) call post_data(CS%id_sm_ciod, IceDS2d%stress_mag, Ice%sCS%diag)
 
-      call update_ice_advection(Ice, IceDS2d, dyn_time_step)
+      call update_ice_advection(Ice, Ice%sCS%dyn_trans_CSp%DS2d, dyn_time_step)
 
       time_start_step = time_start_step + dyn_time_step
     enddo
@@ -406,8 +408,28 @@ subroutine direct_flux_ice_to_IOB(Time, Ice, IOB, do_thermo, do_dynmer, IceMerge
   do_dynmerge= .false. ; if (present(do_dynmer)) do_dynmerge= do_dynmer
 
   if (do_dynmerge) then
+    IOB%IceDS2d%SIS_C_dyn_CSp = IceMerged%SIS_C_dyn_CSp
+    IOB%IceDS2d%dynmer_trans_CSp = IceMerged%dynmer_trans_CSp
+    IOB%IceDS2d%sG = IceMerged%sG
+    IOB%IceDS2d%IG = IceMerged%IG
+    IOB%IceDS2d%US = IceMerged%US
+
+    is = IceMerged%sG%isc ; ie = IceMerged%sG%iec 
+    js = IceMerged%sG%jsc ; je = IceMerged%sG%jec 
+
     !if (ASSOCIATED(IOB%EVP_type)) IOB%EVP_type = EVPT
-    IOB%IceDS2d = IceMerged
+    IOB%IceDS2d%mi_sum(:,:) = IceMerged%mi_sum(is:ie,js:je)
+    IOB%IceDS2d%u_ice_C(:,:) = IceMerged%u_ice_C(is:ie,js:je)
+    IOB%IceDS2d%v_ice_C(:,:) = IceMerged%v_ice_C(is:ie,js:je)
+    IOB%IceDS2d%uh_step(:,:,:) = IceMerged%uh_step(is:ie,js:je,:)
+    IOB%IceDS2d%vh_step(:,:,:) = IceMerged%vh_step(is:ie,js:je,:)
+
+    IOB%IceDS2d%FIA_2d%ice_cover(:,:) = IceMerged%FIA_2d%ice_cover(is:ie,js:je)
+    IOB%IceDS2d%FIA_2d%ice_free(:,:) = IceMerged%FIA_2d%ice_free(is:ie,js:je)
+    IOB%IceDS2d%FIA_2d%WindStr_x(:,:) = IceMerged%FIA_2d%WindStr_x(is:ie,js:je)
+    IOB%IceDS2d%FIA_2d%WindStr_y(:,:) = IceMerged%FIA_2d%WindStr_y(is:ie,js:je)
+    IOB%IceDS2d%FIA_2d%WindStr_ocn_x(:,:) = IceMerged%FIA_2d%WindStr_ocn_x(is:ie,js:je)
+    IOB%IceDS2d%FIA_2d%WindStr_ocn_y(:,:) = IceMerged%FIA_2d%WindStr_ocn_y(is:ie,js:je)
   endif
 
   ! Do a direct copy of the ice surface fluxes into the Ice-ocean-boundary type.
@@ -490,7 +512,7 @@ end subroutine direct_flux_ice_to_IOB
 !! direct_flux_ice_to_IOB above. The thermodynamic varibles are also seperated so only
 !! the dynamics are updated.
 !! The data_override is similar to flux_ocean_to_ice_finish
-subroutine direct_flux_ocn_to_OIB(Time, Ocean, OIB, Ice, do_thermo, do_dynmer, IceMerged)
+subroutine direct_flux_ocn_to_OIB(Time, Ocean, OIB, Ice, do_thermo, do_dynmer)
   type(time_type),    intent(in)     :: Time  !< Current time
   type(ocean_public_type),intent(in) :: Ocean !< A derived data type to specify ocean boundary data
   type(ocean_ice_boundary_type), intent(inout)   :: OIB !< A type containing ocean surface fields that
@@ -501,19 +523,44 @@ subroutine direct_flux_ocn_to_OIB(Time, Ocean, OIB, Ice, do_thermo, do_dynmer, I
     intent(inout) :: Ice            !< The publicly visible ice data type in the slow part
                                     !! of which the ocean surface information is to be stored.
   logical,  optional, intent(in)    :: do_dynmer
-  type(SIS_dyn_state_2d),  optional, intent(inout) :: IceMerged
+  type(SIS_dyn_state_2d) :: DS2d 
 
+  integer :: i, j, is, ie, js, je, i_off, j_off, n, m
+  integer :: isB, ieB, jsB, jeB
   logical :: used, do_therm, do_area_weighted_flux, do_dynmerge
 
   call cpu_clock_begin(fluxOceanIceClock)
+
+  DS2d = Ice%sCS%dyn_trans_CSp%DS2d
 
   do_therm = .true. ; if (present(do_thermo)) do_therm = do_thermo
   do_area_weighted_flux = .false. !! Need to add option to account for area weighted fluxes
   do_dynmerge= .false. ; if (present(do_dynmer)) do_dynmerge= do_dynmer
 
   if (do_dynmerge) then
-    !if (ASSOCIATED(IOB%EVP_type)) IOB%EVP_type = EVPT
-    IceMerged = Ocean%seaice
+    DS2d%SIS_C_dyn_CSp = Ocean%seaice%SIS_C_dyn_CSp
+    DS2d%dynmer_trans_CSp = Ocean%seaice%dynmer_trans_CSp
+    DS2d%sG = Ocean%seaice%sG
+    DS2d%IG = Ocean%seaice%IG
+    DS2d%US = Ocean%seaice%US
+
+    is = Ocean%seaice%sG%isd ; ie = Ocean%seaice%sG%ied 
+    js = Ocean%seaice%sG%jsd ; je = Ocean%seaice%sG%jed 
+    isB = Ocean%seaice%sG%isdB ; ieB = Ocean%seaice%sG%iedB 
+    jsB = Ocean%seaice%sG%jsdB ; jeB = Ocean%seaice%sG%jedB 
+
+    DS2d%mi_sum(:,:) = Ocean%seaice%mi_sum(is:ie,js:je)
+    DS2d%u_ice_C(:,:) = Ocean%seaice%u_ice_C(isB:ieB,js:je)
+    DS2d%v_ice_C(:,:) = Ocean%seaice%v_ice_C(is:ie,jsB:jeB)
+    DS2d%uh_step(:,:,1) = Ocean%seaice%uh_step(isB:ieB,js:je,1)
+    DS2d%vh_step(:,:,1) = Ocean%seaice%vh_step(is:ie,jsB:jeB,1)
+
+    DS2d%FIA_2d%ice_cover(:,:) = Ocean%seaice%FIA_2d%ice_cover(is:ie,js:je)
+    DS2d%FIA_2d%ice_free(:,:) = Ocean%seaice%FIA_2d%ice_free(is:ie,js:je)
+    DS2d%FIA_2d%WindStr_x(:,:) = Ocean%seaice%FIA_2d%WindStr_x(isB:ieB,js:je)
+    DS2d%FIA_2d%WindStr_y(:,:) = Ocean%seaice%FIA_2d%WindStr_y(is:ie,jsB:jeB)
+    DS2d%FIA_2d%WindStr_ocn_x(:,:) = Ocean%seaice%FIA_2d%WindStr_ocn_x(isB:ieB,js:je)
+    DS2d%FIA_2d%WindStr_ocn_y(:,:) = Ocean%seaice%FIA_2d%WindStr_ocn_y(is:ie,jsB:jeB)
   endif
 
   if (ASSOCIATED(OIB%u)) OIB%u(:,:) = Ocean%u_surf(:,:)
